@@ -1,6 +1,5 @@
 import { codeBlockConfig } from '@milkdown/kit/component/code-block';
 import type { Ctx } from '@milkdown/kit/ctx';
-import mermaid from 'mermaid';
 import { sanitizeMarkup } from '../../../lib/sanitize';
 import { renderChartHost } from './chart';
 
@@ -42,6 +41,15 @@ function currentTheme(): 'dark' | 'light' {
   return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
 }
 
+let mermaidPromise: Promise<typeof import('mermaid')> | null = null;
+
+async function loadMermaid(): Promise<typeof import('mermaid')> {
+  if (!mermaidPromise) {
+    mermaidPromise = import('mermaid');
+  }
+  return mermaidPromise;
+}
+
 /**
  * Idempotent init that re-applies on every call. mermaid.initialize() is
  * safe to call repeatedly; later calls replace the theme variables on the
@@ -49,7 +57,8 @@ function currentTheme(): 'dark' | 'light' {
  * theme (their DOM is innerHTML the editor doesn't re-trigger on its own)
  * — re-rendering them is a Phase 5 polish if the seam matters.
  */
-function initMermaid(): void {
+async function initMermaid(): Promise<void> {
+  const { default: mermaid } = await loadMermaid();
   mermaid.initialize({
     startOnLoad: false,
     securityLevel: 'strict',   // Sprint 0: no script via directives/labels; sanitize HTML labels
@@ -132,21 +141,24 @@ export function configureMermaidPreview(ctx: Ctx): void {
       // for applyPreview(...) below. Returning the host element synchronously
       // would lock Vue's reactivity to that one instance and never re-render
       // when its innerHTML is mutated later.
-      mermaid
-        .render(nextMermaidId(), content)
-        .then(({ svg }) => {
-          const host = document.createElement('div');
-          host.className = 'mermaid-preview';
-          host.innerHTML = sanitizeMarkup(svg);   // Sprint 0: never inject raw SVG (XSS guard)
-          applyPreview(host);
-        })
-        .catch((err: unknown) => {
-          console.error('mermaid render failed', err);
-          const errEl = document.createElement('div');
-          errEl.className = 'mermaid-error';
-          errEl.textContent = `Mermaid: ${String((err as { message?: string })?.message ?? err).slice(0, 200)}`;
-          applyPreview(errEl);
-        });
+      (async () => {
+        const { default: mermaid } = await loadMermaid();
+        mermaid
+          .render(nextMermaidId(), content)
+          .then(({ svg }) => {
+            const host = document.createElement('div');
+            host.className = 'mermaid-preview';
+            host.innerHTML = sanitizeMarkup(svg);   // Sprint 0: never inject raw SVG (XSS guard)
+            applyPreview(host);
+          })
+          .catch((err: unknown) => {
+            console.error('mermaid render failed', err);
+            const errEl = document.createElement('div');
+            errEl.className = 'mermaid-error';
+            errEl.textContent = `Mermaid: ${String((err as { message?: string })?.message ?? err).slice(0, 200)}`;
+            applyPreview(errEl);
+          });
+      })();
       return undefined;
     },
   }));
