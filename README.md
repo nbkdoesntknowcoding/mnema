@@ -83,6 +83,34 @@ proves it builds and boots with the enterprise modules entirely absent. Licensin
 - **Requirements.** Comes up on a 4 GB machine. Migrations apply automatically on
   first `up` (idempotent).
 
+## Troubleshooting (self-host)
+
+- **`docker compose up` exits immediately with "set POSTGRES_PASSWORD in .env" (or
+  `REDIS_PASSWORD`).** There's no `.env` yet — the compose refuses to boot with
+  empty credentials. Run `./scripts/self-host-init.sh` first (it writes `.env`
+  with generated secrets); add `--force` to regenerate one that already exists.
+- **"port is already allocated" on startup.** The stack publishes three ports on
+  127.0.0.1: `4321` (web), `8080` (api), `1234` (collab). Stop whatever holds the
+  port, or change the host side of that service's `ports:` entry in
+  `docker-compose.yml`.
+- **Every document shows "disconnected" (HTTPS deploys).** The browser is trying
+  `ws://localhost:1234` — blocked as mixed content on an HTTPS page. Set
+  `PUBLIC_COLLAB_URL=wss://<your-host>/collab`, proxy that path with WebSocket
+  upgrade enabled, and **rebuild the web image** — see the HTTPS note above.
+  `./scripts/self-host-init.sh --url https://<your-host> --force` regenerates
+  `.env` with the whole URL block derived for you.
+- **Changed a `PUBLIC_*` var in `.env` but the app ignores it.** `PUBLIC_*` values
+  are baked into the web image at build time, not read at runtime. Rebuild it:
+  `docker compose up -d --build web`.
+- **First boot looks stuck.** Startup is gated: postgres healthy → `migrate`
+  completes → api healthy → web starts. Watch `docker compose ps` and
+  `docker compose logs -f migrate api`. `(non-fatal on re-run)` lines from
+  `migrate` are normal — the migrations are idempotent and re-runs are safe.
+- **The login page shows SSO buttons, or sign-up is nowhere to be found.**
+  Self-host sign-in lives at **`/auth/local`** (email + password). Keep both
+  `AUTH_PROVIDER=password` and `PUBLIC_AUTH_PROVIDER=password` in `.env` — the
+  `PUBLIC_` one is baked at build time, so rebuild the web image after changing it.
+
 ## Run it with an AI agent (alternative)
 
 Open the repo in **Claude Code** (or any coding agent) and paste:
