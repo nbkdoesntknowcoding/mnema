@@ -1,0 +1,50 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import {
+  InviteAcceptCard,
+  type LookupOk,
+  type LookupErr,
+} from '../../components/auth/InviteAcceptCard';
+
+const { token } = Astro.params;
+if (!token) {
+  return Astro.redirect('/');
+}
+
+const apiUrl =
+  (import.meta.env.PUBLIC_API_URL as string | undefined) ?? 'http://localhost:8080';
+
+// Server-side fetch — the lookup endpoint is intentionally public (added
+// to PUBLIC_ROUTES in plugins/auth.ts) so a not-yet-signed-in invitee can
+// see the preview without bouncing through auth first.
+let lookup: LookupOk | LookupErr;
+try {
+  const res = await fetch(
+    `${apiUrl}/api/invitations/lookup?token=${encodeURIComponent(token)}`,
+  );
+  // 200 → LookupOk; non-200 → LookupErr envelope with `error` field.
+  lookup = (await res.json()) as LookupOk | LookupErr;
+} catch (err) {
+  console.error('Invitation lookup failed', err);
+  lookup = { error: 'network_error' };
+}
+
+// Check whether the user is signed in (we render different CTAs based on it).
+// Astro.locals.auth is populated by the session middleware from Phase 0.2.
+const auth = Astro.locals.auth;
+---
+
+<BaseLayout title="Accept invitation · Mnema">
+  <main
+    class="min-h-screen flex items-center justify-center px-4"
+    style="background: var(--surface-base);"
+  >
+    <InviteAcceptCard
+      client:load
+      token={token}
+      lookup={lookup}
+      isSignedIn={Boolean(auth)}
+      signedInEmail={auth?.email ?? null}
+    />
+  </main>
+</BaseLayout>

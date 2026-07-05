@@ -1,0 +1,96 @@
+---
+import '../styles/global.css';
+import OgMeta from '../components/og/OgMeta.astro';
+import PublicFooter from '../components/public/PublicFooter.astro';
+import PublicHeader from '../components/public/PublicHeader.astro';
+
+/**
+ * Marketing-page shell.
+ *
+ * Owns the no-FOUC theme script (same one BaseLayout uses for app pages),
+ * the OG / Twitter meta, the shared public header + footer, and a min-
+ * height flex column so the footer always sits at the bottom even on
+ * short pages.
+ */
+interface Props {
+  title: string;
+  description: string;
+  pathname: string;
+  ogImage?: string;
+}
+
+const { title, description, pathname, ogImage } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <link rel="preload" href="/fonts/geist/Geist-Regular.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/geist/Geist-Medium.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/geist/GeistMono-Regular.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/instrument-serif/InstrumentSerif-Regular.woff2" as="font" type="font/woff2" crossorigin />
+
+    {/* Inter for the marketing pages (close to Raycast's geometric sans). Claude's
+       own display/serif faces are licensed, so the free editorial serif
+       (Instrument Serif, above) is used for the italic accents. */}
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />
+
+    <style is:global>
+      /* Marketing-only: Inter + Raycast-style opacity-based text contrast. */
+      body.font-sans {
+        --sans: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+        --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+        font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+      }
+      :root[data-theme='dark'] body.font-sans {
+        --ink: rgba(255, 255, 255, 0.94);
+        --ink-soft: rgba(255, 255, 255, 0.61);
+        --ink-muted: rgba(255, 255, 255, 0.40);
+        --ink-faint: rgba(255, 255, 255, 0.24);
+      }
+    </style>
+
+    {/* No-FOUC theme script — same shape as BaseLayout's, kept inline
+       because Astro otherwise defers separate scripts past first paint. */}
+    <script is:inline>
+      (function () {
+        try {
+          var stored = localStorage.getItem('mnema-theme');
+          var resolved;
+          if (stored === 'light') {
+            resolved = 'light';
+          } else if (stored === 'dark') {
+            resolved = 'dark';
+          } else if (stored === 'system') {
+            resolved = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+          } else {
+            resolved = 'dark';
+          }
+          document.documentElement.setAttribute('data-theme', resolved);
+        } catch (e) {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        }
+      })();
+    </script>
+
+    <OgMeta title={title} description={description} pathname={pathname} image={ogImage} />
+  </head>
+  <body
+    class="font-sans min-h-screen flex flex-col"
+    style="background: var(--canvas); color: var(--ink);"
+  >
+    <PublicHeader />
+    <main class="flex-1">
+      <slot />
+    </main>
+    <PublicFooter />
+  </body>
+</html>

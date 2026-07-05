@@ -1,0 +1,188 @@
+name: Test
+
+on:
+  push:
+    branches: [main, staging]
+  pull_request:
+    branches: [main, staging]
+
+jobs:
+  test:
+    name: Lint, typecheck, tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: boppl
+          POSTGRES_PASSWORD: boppl_ci_pw
+          POSTGRES_DB: boppl_context_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U boppl -d boppl_context_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://boppl:boppl_ci_pw@localhost:5432/boppl_context_ci
+      REDIS_URL: redis://localhost:6379
+      NODE_ENV: test
+      API_PORT: 8080
+      COLLAB_PORT: 1234
+      LOG_LEVEL: error
+      # Test-only dummy values — never used to access real services.
+      WORKOS_API_KEY: sk_test_ci_dummy
+      WORKOS_CLIENT_ID: client_ci_dummy
+      WORKOS_REDIRECT_URI: http://localhost:5173/auth/callback
+      WORKOS_COOKIE_PASSWORD: ci_test_only_cookie_password_min_32_chars
+      JWT_SECRET: ci_test_only_jwt_secret_minimum_32_characters
+      JWT_ISSUER: http://localhost:8080
+      JWT_AUDIENCE: http://localhost:8080
+      JWT_AUDIENCE_MCP: http://localhost:8080/mcp
+      MCP_BASE_URL: http://localhost:8080
+      MCP_AUTHORIZATION_SERVER: http://localhost:8080
+      MCP_PROTOCOL_VERSION: 2025-11-25
+      MCP_ORIGIN_ALLOWLIST: http://localhost:5173,http://localhost:6274
+      # Voyage + Gemini are required-by-Zod at config load time, even for
+      # tests that don't make real provider calls. Real keys live only in
+      # local .env; CI uses dummies. Provider mocks via vi.mock prevent
+      # any actual outbound HTTP regardless.
+      VOYAGE_API_KEY: ci_dummy_key_not_used_due_to_mock
+      GEMINI_API_KEY: ci_dummy_key_not_used_due_to_mock
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.23.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply schema migrations
+        run: pnpm --filter @boppl/api db:migrate
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: RLS regression
+        run: pnpm --filter @boppl/api test src/tests/rls-wrong-tenant.test.ts
+
+      - name: MCP wrong-tenant regression
+        run: pnpm --filter @boppl/api test src/tests/mcp-wrong-tenant.test.ts
+        env:
+          NODE_ENV: test
+
+      - name: MCP tools
+        run: pnpm --filter @boppl/api test src/tests/mcp-tools.test.ts
+        env:
+          NODE_ENV: test
+
+      - name: MCP search
+        run: pnpm --filter @boppl/api test src/tests/mcp-search.test.ts
+        env:
+          NODE_ENV: test
+
+      - name: Chunker unit
+        run: pnpm --filter @boppl/api test src/tests/chunker.test.ts
+        env:
+          NODE_ENV: test
+          # Test-only — chunker is pure CPU but env.ts validates VOYAGE_API_KEY at import time.
+          VOYAGE_API_KEY: ci_dummy_key_not_used_chunker_is_pure
+
+      - name: Embeddings integration
+        run: pnpm --filter @boppl/api test src/tests/embeddings-integration.test.ts
+        env:
+          NODE_ENV: test
+          # Test-only — Voyage call is mocked via vi.mock; never burns real quota.
+          VOYAGE_API_KEY: ci_dummy_key_not_used_due_to_mock
+
+      - name: MCP hybrid search
+        run: pnpm --filter @boppl/api test src/tests/mcp-search-hybrid.test.ts
+        env:
+          NODE_ENV: test
+          VOYAGE_API_KEY: ci_dummy_key_not_used_due_to_mock
+
+      - name: Autocomplete trigger
+        run: pnpm --filter @boppl/web test
+        env:
+          NODE_ENV: test
+
+      - name: Rate limit
+        run: pnpm --filter @boppl/api test src/tests/complete-rate-limit.test.ts
+        env:
+          NODE_ENV: test
+          # Rate-limit test only exercises Redis sliding-window logic.
+          # No real Gemini call is made in this test; placeholder satisfies
+          # env.ts's required-key Zod check at module load time.
+          GEMINI_API_KEY: ci_dummy_key_not_used_due_to_test_scope
+
+      - name: Invitations
+        run: pnpm --filter @boppl/api test src/tests/invitations.test.ts
+        env:
+          NODE_ENV: test
+
+      - name: Round-trip — corpus
+        run: pnpm --filter @boppl/api test src/tests/round-trip/corpus.test.ts
+
+      - name: Round-trip — fuzz
+        run: pnpm --filter @boppl/api test src/tests/round-trip/fuzz.test.ts
+
+      - name: Round-trip — full-stack
+        run: pnpm --filter @boppl/api test src/tests/round-trip/full-stack.test.ts
+
+  deploy:
+    name: Deploy to VPS
+    needs: [test]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: mnema-deploy
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Write SSH deploy key
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+      - name: Deploy to VPS (with retry)
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 25
+          max_attempts: 4
+          retry_wait_seconds: 30
+          command: >
+            ssh -i ~/.ssh/deploy_key
+            -o StrictHostKeyChecking=no
+            -o UserKnownHostsFile=/dev/null
+            -o ConnectTimeout=40
+            -o ServerAliveInterval=15
+            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}
+            'bash -s' < infra/deploy-remote.sh

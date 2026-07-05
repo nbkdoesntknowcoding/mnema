@@ -1,0 +1,19 @@
+---
+// DESIGN APPLIED: 2026-05-27
+import AppLayout from '../../../layouts/AppLayout.astro';
+import { SessionDetail } from '../../../components/dev/SessionDetail';
+
+const auth = Astro.locals.auth;
+if (!auth) {
+  return Astro.redirect('/auth/login');
+}
+
+const { id } = Astro.params;
+if (!id) {
+  return Astro.redirect('/app/sessions');
+}
+---
+
+<AppLayout title={`Session ${id.slice(0, 8)}`}>
+  <SessionDetail sessionId={id} client:load />
+</AppLayout>

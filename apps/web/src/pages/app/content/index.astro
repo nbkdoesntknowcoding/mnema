@@ -1,0 +1,1638 @@
+---
+import AppLayout from '../../../layouts/AppLayout.astro';
+
+const auth = Astro.locals.auth;
+if (!auth) {
+  return Astro.redirect('/auth/login');
+}
+
+const apiUrl = (import.meta.env.PUBLIC_API_URL as string | undefined) ?? 'http://localhost:8080';
+
+// Folder browsing: ?folder=<id> to enter a folder, no param = root view
+const folderParam = Astro.url.searchParams.get('folder');
+const isInsideFolder = !!folderParam;
+
+// Back URL: encode current page URL so docs opened from here return here
+const currentPageUrl = Astro.url.pathname + Astro.url.search;
+const backParam = encodeURIComponent(currentPageUrl);
+
+interface DocSummary {
+  id: string;
+  title: string;
+  type: string;
+  folder_id: string | null;
+  updated_at: string;
+  source_attachment_format?: 'docx' | 'pdf' | null;
+}
+
+interface FolderSummary {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  doc_count: number;
+  subfolder_count: number;
+}
+
+let docs: DocSummary[] = [];
+let folders: FolderSummary[] = [];   // root folders (at root) or ALL folders (used for move-to lists)
+let subfolders: FolderSummary[] = []; // direct children when inside a folder
+let currentFolder: FolderSummary | null = null;
+const unreadByDoc = new Map<string, number>();
+
+try {
+  const docsQuery = isInsideFolder ? `?folder_id=${folderParam}` : '';
+  // Root view: fetch only root folders (?parent_id=null)
+  // Folder view: fetch root folders (for move-to list) + subfolders of current folder
+  const rootFoldersUrl = `${apiUrl}/api/folders?parent_id=null`;
+  const subFoldersUrl  = isInsideFolder ? `${apiUrl}/api/folders?parent_id=${folderParam}` : null;
+
+  const fetches: Promise<Response>[] = [
+    fetch(`${apiUrl}/api/docs${docsQuery}`, { headers: { Cookie: `boppl_jwt=${auth.jwt}` } }),
+    fetch(rootFoldersUrl,                   { headers: { Cookie: `boppl_jwt=${auth.jwt}` } }),
+    fetch(`${apiUrl}/api/doc-read-state/unread-counts`, { headers: { Cookie: `boppl_jwt=${auth.jwt}` } }),
+  ];
+  if (subFoldersUrl) {
+    fetches.push(fetch(subFoldersUrl, { headers: { Cookie: `boppl_jwt=${auth.jwt}` } }));
+  }
+
+  const [docsRes, foldersRes, unreadRes, subFoldersRes] = await Promise.all(fetches);
+
+  if (docsRes.ok) {
+    const body = (await docsRes.json()) as { docs: DocSummary[] };
+    docs = body.docs;
+  }
+  if (foldersRes.ok) {
+    const body = (await foldersRes.json()) as { folders: FolderSummary[] };
+    folders = body.folders;
+    if (isInsideFolder) {
+      // currentFolder won't be in the root list; fetch it from all folders
+      const allRes = await fetch(`${apiUrl}/api/folders`, { headers: { Cookie: `boppl_jwt=${auth.jwt}` } });
+      if (allRes.ok) {
+        const allBody = (await allRes.json()) as { folders: FolderSummary[] };
+        currentFolder = allBody.folders.find((f) => f.id === folderParam) ?? null;
+      }
+    }
+  }
+  if (unreadRes?.ok) {
+    const body = (await unreadRes.json()) as {
+      unread: Array<{ doc_id: string; unread_comment_count: number }>;
+    };
+    for (const row of body.unread ?? []) {
+      unreadByDoc.set(row.doc_id, row.unread_comment_count);
+    }
+  }
+  if (subFoldersRes?.ok) {
+    const body = (await subFoldersRes.json()) as { folders: FolderSummary[] };
+    subfolders = body.folders;
+  }
+} catch {
+  /* API offline */
+}
+
+// At root level, only show unfiled docs below the folder tiles
+const unfiledDocs = isInsideFolder ? docs : docs.filter((d) => !d.folder_id);
+
+function relativeTime(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `${days}d ago`;
+  return new Date(dateStr).toLocaleDateString();
+}
+
+const domainPart = auth.email?.split('@')[1]?.split('.')[0] ?? '';
+const workspaceName = domainPart
+  ? domainPart.charAt(0).toUpperCase() + domainPart.slice(1)
+  : 'Workspace';
+
+function extClass(d: DocSummary): string {
+  if (d.source_attachment_format === 'pdf')  return 'pdf';
+  if (d.source_attachment_format === 'docx') return 'docx';
+  return d.type === 'engineering' ? 'eng'
+    : d.type === 'instruction' ? 'inst'
+    : d.type === 'snippet' ? 'snip'
+    : 'md';
+}
+function extLabel(d: DocSummary): string {
+  if (d.source_attachment_format === 'pdf')  return 'PDF';
+  if (d.source_attachment_format === 'docx') return 'DOCX';
+  return d.type === 'engineering' ? 'ENG'
+    : d.type === 'instruction' ? 'INST'
+    : d.type === 'snippet' ? 'SNIP'
+    : 'MD';
+}
+
+const heading = isInsideFolder
+  ? (currentFolder?.name ?? 'Folder')
+  : 'All docs';
+
+const totalItems = isInsideFolder
+  ? subfolders.length + docs.length
+  : folders.length + unfiledDocs.length;
+---
+
+<style>
+  .co-main { padding: 14px 24px 80px; }
+
+  /* ── ANIMATIONS ─────────────────────────────────────────────────────── */
+  @keyframes co-tile-in {
+    from { opacity: 0; transform: translateY(10px) scale(0.97); }
+    to   { opacity: 1; transform: translateY(0)   scale(1);    }
+  }
+  @keyframes co-row-in {
+    from { opacity: 0; transform: translateX(-6px); }
+    to   { opacity: 1; transform: translateX(0);    }
+  }
+  @keyframes co-fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+
+  /* Tile entrance — staggered by nth-child.
+     Use 'backwards' (not 'both') so the animation fills backward before start
+     but doesn't lock the transform after finish (lets hover transition take over). */
+  .co-icon-grid .co-tile,
+  .co-folder-grid .co-tile {
+    animation: co-tile-in 240ms var(--ease-out, cubic-bezier(0.16,1,0.3,1)) backwards;
+  }
+  .co-icon-grid .co-tile:nth-child(1),  .co-folder-grid .co-tile:nth-child(1)  { animation-delay:  0ms; }
+  .co-icon-grid .co-tile:nth-child(2),  .co-folder-grid .co-tile:nth-child(2)  { animation-delay: 18ms; }
+  .co-icon-grid .co-tile:nth-child(3),  .co-folder-grid .co-tile:nth-child(3)  { animation-delay: 36ms; }
+  .co-icon-grid .co-tile:nth-child(4),  .co-folder-grid .co-tile:nth-child(4)  { animation-delay: 54ms; }
+  .co-icon-grid .co-tile:nth-child(5),  .co-folder-grid .co-tile:nth-child(5)  { animation-delay: 72ms; }
+  .co-icon-grid .co-tile:nth-child(6),  .co-folder-grid .co-tile:nth-child(6)  { animation-delay: 88ms; }
+  .co-icon-grid .co-tile:nth-child(7),  .co-folder-grid .co-tile:nth-child(7)  { animation-delay:102ms; }
+  .co-icon-grid .co-tile:nth-child(8),  .co-folder-grid .co-tile:nth-child(8)  { animation-delay:116ms; }
+  .co-icon-grid .co-tile:nth-child(9),  .co-folder-grid .co-tile:nth-child(9)  { animation-delay:128ms; }
+  .co-icon-grid .co-tile:nth-child(n+10), .co-folder-grid .co-tile:nth-child(n+10) { animation-delay:140ms; }
+
+  /* List row entrance */
+  .co-list .co-lr:not(.head) {
+    animation: co-row-in 180ms var(--ease-out, cubic-bezier(0.16,1,0.3,1)) both;
+  }
+  .co-list .co-lr:nth-child(2)  { animation-delay:  0ms; }
+  .co-list .co-lr:nth-child(3)  { animation-delay: 20ms; }
+  .co-list .co-lr:nth-child(4)  { animation-delay: 38ms; }
+  .co-list .co-lr:nth-child(5)  { animation-delay: 54ms; }
+  .co-list .co-lr:nth-child(6)  { animation-delay: 68ms; }
+  .co-list .co-lr:nth-child(n+7) { animation-delay: 80ms; }
+
+  /* Hover lift + glow on tiles — transition only on background + box-shadow
+     so the entrance animation's transform runs cleanly. The translateY on hover
+     uses will-change to avoid layout thrash. */
+  .co-tile {
+    will-change: transform;
+    transition:
+      background  var(--duration-fast, 120ms) ease,
+      box-shadow  160ms var(--ease-out, cubic-bezier(0.16,1,0.3,1));
+  }
+  .co-tile:hover {
+    background: var(--surface-2);
+    transform: translateY(-3px);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.22), 0 1px 4px rgba(0,0,0,0.1);
+    transition:
+      background  var(--duration-fast, 120ms) ease,
+      transform   160ms var(--ease-out, cubic-bezier(0.16,1,0.3,1)),
+      box-shadow  160ms var(--ease-out, cubic-bezier(0.16,1,0.3,1));
+  }
+  .co-tile:active { transform: translateY(-1px); box-shadow: 0 2px 6px rgba(0,0,0,0.15); }
+
+  /* Icon lifts independently on hover — gives depth separate from tile lift */
+  .co-tile .ico-wrap {
+    transition: transform 200ms var(--ease-out, cubic-bezier(0.16,1,0.3,1));
+  }
+  .co-tile:hover .ico-wrap {
+    transform: scale(1.07) translateY(-3px);
+  }
+  .co-tile:active .ico-wrap { transform: scale(1.02) translateY(-1px); }
+
+  /* List row smooth hover */
+  .co-lr { transition: background var(--duration-fast, 120ms) ease; }
+
+  /* View switch: crossfade instead of instant show/hide */
+  .co-icon-grid, .co-folder-grid, .co-list {
+    transition: opacity 160ms ease;
+  }
+
+  /* VIEW TOGGLE */
+  .co-wrap.view-icons .co-list { display: none; }
+  .co-wrap.view-list .co-icon-grid { display: none; }
+  .co-wrap.view-list .co-folder-grid { display: none; }
+
+  /* ── RECENTLY OPENED STRIP ────────────────────────────────────────────── */
+  .co-recent {
+    margin-bottom: 24px;
+  }
+  .co-recent-scroll {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+  .co-recent-item {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 12px;
+    border-radius: 8px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    text-decoration: none;
+    color: var(--ink);
+    max-width: 200px;
+    transition: background 120ms ease, transform 140ms var(--ease-out, cubic-bezier(0.16,1,0.3,1)),
+                box-shadow 140ms ease;
+    animation: co-fade-in 200ms ease both;
+  }
+  .co-recent-item:nth-child(1) { animation-delay:  0ms; }
+  .co-recent-item:nth-child(2) { animation-delay: 30ms; }
+  .co-recent-item:nth-child(3) { animation-delay: 55ms; }
+  .co-recent-item:nth-child(4) { animation-delay: 75ms; }
+  .co-recent-item:nth-child(5) { animation-delay: 90ms; }
+  .co-recent-item:hover {
+    background: var(--surface-3, var(--surface-2));
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.18);
+  }
+  .co-recent-icon {
+    width: 22px; height: 26px; flex-shrink: 0;
+    background: var(--surface-3, var(--line));
+    border-radius: 3px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .co-recent-name {
+    font: 500 12px/1.3 var(--sans);
+    color: var(--ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 140px;
+  }
+  .co-recent-time {
+    font: 400 10.5px/1 var(--mono);
+    color: var(--ink-muted);
+    white-space: nowrap;
+  }
+
+  /* ── SORT / FILTER BAR ────────────────────────────────────────────────── */
+  .co-sortbar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 0 14px;
+    flex-wrap: wrap;
+  }
+  .co-sort-btn {
+    height: 26px; padding: 0 10px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--ink-muted);
+    font: 500 11.5px/1 var(--sans);
+    cursor: pointer;
+    transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .co-sort-btn:hover { background: var(--surface-2); color: var(--ink); }
+  .co-sort-btn.active {
+    background: var(--surface-2);
+    color: var(--ink);
+    border-color: var(--line-strong, var(--line));
+  }
+  .co-sort-sep {
+    width: 1px; height: 14px; background: var(--line); flex-shrink: 0;
+  }
+
+  /* SECTION TITLE */
+  .co-section-title {
+    display: flex; align-items: baseline; justify-content: space-between;
+    margin: 10px 4px 12px;
+  }
+  .co-section-title h3 {
+    margin: 0; font: 500 11px/1 var(--mono);
+    letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);
+  }
+  .co-section-title .co-count { font: 500 11px/1 var(--mono); color: var(--ink-muted); }
+
+  /* ICON + FOLDER GRID */
+  .co-icon-grid,
+  .co-folder-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 6px;
+    margin-bottom: 24px;
+  }
+
+  /* TILE (shared between folders and files) */
+  .co-tile {
+    display: flex; flex-direction: column; align-items: center;
+    gap: 6px;
+    padding: 12px 6px 10px;
+    border-radius: 9px;
+    cursor: default;
+    user-select: none;
+    position: relative;
+    text-decoration: none;
+  }
+  .co-tile:hover { background: var(--surface-2); }
+  .co-tile .ico-wrap {
+    height: 78px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .co-tile .t-name {
+    font: 500 12.5px/1.25 var(--sans);
+    color: var(--ink);
+    text-align: center;
+    max-width: 100%;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    word-break: break-word;
+    padding: 0 4px;
+  }
+  .co-tile .t-meta {
+    font: 500 10.5px/1 var(--sans);
+    color: var(--ink-muted);
+    letter-spacing: 0.02em;
+  }
+
+  /* ADD-FOLDER TILE */
+  .co-tile-add {
+    display: flex; flex-direction: column; align-items: center;
+    gap: 6px; padding: 12px 6px 10px;
+    border-radius: 9px; cursor: pointer;
+    user-select: none; border: 0; background: transparent; width: 100%;
+  }
+  .co-tile-add:hover { background: var(--surface-2); }
+  .co-tile-add .ico-wrap {
+    height: 78px; display: flex; align-items: center; justify-content: center;
+  }
+  .co-tile-add .t-name {
+    font: 500 12.5px/1.25 var(--sans); color: var(--ink-muted); text-align: center;
+  }
+
+  /* Folder name inline editor (shown over the add tile when creating) */
+  #co-folder-input-wrap {
+    display: none; flex-direction: column; align-items: center;
+    gap: 6px; padding: 12px 6px 10px;
+    border-radius: 9px; background: var(--surface-2);
+  }
+  #co-folder-input-wrap.visible { display: flex; }
+  #co-folder-input-wrap .ico-wrap {
+    height: 78px; display: flex; align-items: center; justify-content: center;
+  }
+  #co-folder-name-inp {
+    width: 100%; background: var(--canvas);
+    border: 1px solid var(--accent); border-radius: 4px;
+    color: var(--ink); font: 500 12px/1 var(--sans);
+    padding: 4px 6px; text-align: center; outline: none;
+  }
+
+  /* FOLDER ICON */
+  .co-folder-svg {
+    width: 96px; height: 74px;
+    filter: drop-shadow(0 6px 14px rgba(0,0,0,0.45));
+  }
+
+  /* LARGE FILE ICON */
+  .co-fi {
+    width: 56px; height: 68px;
+    position: relative;
+    filter: drop-shadow(0 4px 10px rgba(0,0,0,0.4));
+  }
+  .co-fi .sheet {
+    position: absolute; inset: 0;
+    background: linear-gradient(180deg, #FBFBFA, #DBDBD7);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .co-fi .sheet::before {
+    content: ""; position: absolute; top: 0; right: 0;
+    width: 16px; height: 16px;
+    background: linear-gradient(225deg, rgba(0,0,0,0.18) 50%, transparent 50%);
+    border-bottom-left-radius: 4px;
+  }
+  .co-fi .sheet::after {
+    content: ""; position: absolute; top: 0; right: 0;
+    width: 16px; height: 16px;
+    background: linear-gradient(135deg, transparent 50%, #C7C7C2 50%);
+    border-bottom-left-radius: 4px;
+  }
+  .co-fi .lines {
+    position: absolute; left: 7px; right: 7px; top: 24px;
+    display: flex; flex-direction: column; gap: 3px;
+  }
+  .co-fi .lines i {
+    height: 2px; background: rgba(10,11,13,0.18); border-radius: 1px;
+    display: block;
+  }
+  .co-fi .lines i:nth-child(2) { width: 72%; }
+  .co-fi .lines i:nth-child(3) { width: 90%; }
+  .co-fi .lines i:nth-child(4) { width: 60%; }
+  .co-fi .lines i:nth-child(5) { width: 82%; }
+  .co-fi .ext-tag {
+    position: absolute; bottom: 6px; left: -3px; right: -3px;
+    display: flex; align-items: center; justify-content: center;
+    padding: 3px 0;
+    border-radius: 3px;
+    font: 700 9px/1 var(--sans);
+    color: white;
+    letter-spacing: 0.08em;
+  }
+  .co-fi.md .ext-tag   { background: linear-gradient(180deg, #1E1F23, #0E0F12); color: var(--accent); }
+  .co-fi.eng .ext-tag  { background: linear-gradient(180deg, #7C9CFF, #4A67D9); }
+  .co-fi.inst .ext-tag { background: linear-gradient(180deg, #FFB370, #FF7A8A); color: var(--on-ink); }
+  .co-fi.snip .ext-tag { background: linear-gradient(180deg, #6BE39B, #2B9B9B); color: var(--on-ink); }
+  .co-fi.pdf .ext-tag  { background: linear-gradient(180deg, #f87171, #dc2626); }
+  .co-fi.docx .ext-tag { background: linear-gradient(180deg, #60a5fa, #2563eb); }
+
+  /* LIST VIEW */
+  .co-list { display: flex; flex-direction: column; }
+  .co-lr {
+    display: grid;
+    grid-template-columns: 28px minmax(0,1fr) 90px 80px 28px;
+    align-items: center; padding: 7px 10px; border-radius: 6px;
+    font: 400 12.5px/1 var(--sans); gap: 12px; text-decoration: none; color: var(--ink);
+  }
+  .co-lr.head {
+    font: 500 10.5px/1 var(--mono); color: var(--ink-muted);
+    letter-spacing: 0.04em; text-transform: uppercase;
+    padding: 8px 10px; border-bottom: 1px solid var(--line); border-radius: 0;
+  }
+  .co-lr:not(.head):hover { background: var(--surface-2); }
+  .co-lr .co-ic {
+    width: 22px; height: 22px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .co-lr .co-nm { color: var(--ink); display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .co-lr .co-nm .co-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .co-lr .co-type {
+    font: 500 10px/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--ink-muted); padding: 2px 6px;
+    background: var(--surface-2); border-radius: 4px; white-space: nowrap;
+  }
+  .co-lr .co-dt { color: var(--ink-muted); font-size: 12px; }
+  .co-lr .co-unread {
+    width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex-shrink: 0;
+  }
+
+  /* SMALL FILE ICON (list view) */
+  .co-file-ico {
+    width: 18px; height: 22px; position: relative; flex-shrink: 0;
+  }
+  .co-file-ico .sheet {
+    position: absolute; inset: 0;
+    background: linear-gradient(180deg, #FBFBFA, #DBDBD7);
+    border-radius: 3px; overflow: hidden;
+  }
+  .co-file-ico .sheet::before {
+    content: ""; position: absolute; top: 0; right: 0;
+    width: 7px; height: 7px;
+    background: linear-gradient(225deg, rgba(0,0,0,0.18) 50%, transparent 50%);
+  }
+  .co-file-ico .ext {
+    position: absolute; bottom: 0; left: -2px; right: -2px;
+    display: flex; align-items: center; justify-content: center;
+    padding: 2px 0; border-radius: 2px;
+    font: 700 6px/1 var(--sans); color: white; letter-spacing: 0.04em;
+  }
+  .co-file-ico.md .ext   { background: linear-gradient(180deg, #1E1F23, #0E0F12); color: var(--accent); }
+  .co-file-ico.eng .ext  { background: linear-gradient(180deg, #7C9CFF, #4A67D9); }
+  .co-file-ico.inst .ext { background: linear-gradient(180deg, #FFB370, #FF7A8A); color: var(--on-ink); }
+  .co-file-ico.snip .ext { background: linear-gradient(180deg, #6BE39B, #2B9B9B); color: var(--on-ink); }
+  .co-file-ico.pdf .ext  { background: linear-gradient(180deg, #f87171, #dc2626); }
+  .co-file-ico.docx .ext { background: linear-gradient(180deg, #60a5fa, #2563eb); }
+
+  /* EMPTY STATE */
+  .co-empty {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    min-height: calc(100% - 80px); padding: 60px 24px; text-align: center; gap: 12px;
+  }
+  .co-empty-kicker {
+    font: 500 11px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-muted);
+  }
+  .co-empty h2 { margin: 0; font: 500 28px/1.1 var(--sans); letter-spacing: -0.02em; color: var(--ink); }
+  .co-empty p { margin: 0; font-size: 14px; line-height: 1.6; color: var(--ink-muted); max-width: 400px; }
+  .co-empty-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 9px 16px; border-radius: 7px;
+    background: var(--ink); color: var(--on-ink);
+    font: 500 13px/1 var(--sans); cursor: pointer; border: 0; margin-top: 8px;
+  }
+  .co-empty-btn:hover { opacity: 0.88; }
+
+  /* MOVE-TO-FOLDER SELECT (list view) */
+  .co-move-sel {
+    appearance: none; background: var(--surface-2); border: 1px solid var(--line);
+    border-radius: 4px; color: var(--ink-muted); font: 400 11px/1 var(--sans);
+    padding: 2px 6px; cursor: pointer; outline: none; max-width: 80px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .co-move-sel:hover { border-color: var(--accent); }
+
+  /* UPLOAD BUTTON */
+  .co-upload-btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 5px 10px 5px 8px; border-radius: 6px;
+    background: transparent; border: 1px solid var(--line);
+    font: 500 12px/1 var(--sans); color: var(--ink-muted); cursor: pointer;
+  }
+  .co-upload-btn:hover { background: var(--surface-2); color: var(--ink); border-color: var(--line-strong); }
+
+  /* OS FILE DROP OVERLAY */
+  #co-drop-overlay {
+    display: none; position: fixed; inset: 0; z-index: 200;
+    background: rgba(10,11,13,0.72); backdrop-filter: blur(4px);
+    align-items: center; justify-content: center;
+    pointer-events: none;
+  }
+  #co-drop-overlay.visible { display: flex; }
+  .co-drop-inner {
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
+    border: 2px dashed var(--accent); border-radius: 16px;
+    padding: 48px 72px;
+    color: var(--accent); text-align: center;
+  }
+  .co-drop-inner p { margin: 0; font: 500 16px/1.4 var(--sans); }
+  .co-drop-inner span { font: 400 12px/1 var(--sans); color: var(--ink-muted); }
+
+  /* DRAG-AND-DROP (within-app) */
+  .co-tile[data-doc-id] { cursor: default; }
+  .co-tile[data-doc-id].co-dragging { opacity: 0.35; pointer-events: none; }
+  .co-tile[data-folder-id].co-drag-over {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+  .co-tile[data-folder-id].co-drag-over .co-folder-svg {
+    filter: drop-shadow(0 6px 14px rgba(0,0,0,0.45)) brightness(1.15);
+    transform: scale(1.04);
+    transition: transform 120ms ease;
+  }
+  /* Unfile drop zone (shown when dragging inside a folder) */
+  .co-unfile-zone {
+    display: none; align-items: center; justify-content: center; gap: 8px;
+    border: 1.5px dashed var(--line); border-radius: 8px;
+    padding: 10px 16px; margin-bottom: 16px;
+    color: var(--ink-muted); font: 500 12px/1 var(--sans);
+    transition: border-color 120ms, background 120ms;
+  }
+  .co-unfile-zone.co-drag-active { display: flex; }
+  .co-unfile-zone.co-drag-over {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+    color: var(--accent);
+  }
+  /* List row draggable */
+  .co-lr[data-doc-id] { cursor: default; }
+  .co-lr[data-doc-id].co-dragging { opacity: 0.35; }
+
+  /* ── RIGHT-CLICK CONTEXT MENU ── */
+  #co-ctx-menu {
+    position: fixed; z-index: 400;
+    background: color-mix(in srgb, var(--surface-overlay) 82%, transparent);
+    backdrop-filter: blur(20px) saturate(1.4);
+    -webkit-backdrop-filter: blur(20px) saturate(1.4);
+    border: 1px solid color-mix(in srgb, var(--line-strong) 55%, transparent);
+    border-radius: 10px;
+    box-shadow:
+      0 12px 40px rgba(0,0,0,0.38),
+      0 2px 8px rgba(0,0,0,0.22),
+      inset 0 1px 0 rgba(255,255,255,0.08);
+    padding: 4px;
+    min-width: 192px;
+    display: none;
+    user-select: none;
+  }
+  #co-ctx-menu.visible { display: block; }
+  .co-ctx-item {
+    display: flex; align-items: center; gap: 9px;
+    padding: 8px 10px; border-radius: 6px;
+    font: 400 13px/1 var(--sans); color: var(--ink);
+    cursor: pointer;
+  }
+  .co-ctx-item:hover { background: var(--surface-2); }
+  .co-ctx-item svg { flex-shrink: 0; color: var(--ink-muted); }
+  .co-ctx-item.danger { color: var(--status-error, #f25c5c); }
+  .co-ctx-item.danger svg { color: var(--status-error, #f25c5c); }
+  .co-ctx-sep {
+    height: 1px;
+    background: color-mix(in srgb, var(--line) 70%, transparent);
+    margin: 3px 8px;
+  }
+</style>
+
+<AppLayout title="Content — Mnema" workspaceName={workspaceName} email={auth.email} hasToolbar={true}>
+
+  <!-- TOOLBAR -->
+  <Fragment slot="toolbar">
+    <div style="display:flex;align-items:center;flex:1;min-width:0;">
+      <div style="display:flex;align-items:center;gap:1px;margin-right:10px;">
+        <button
+          onclick="history.back()"
+          style="width:26px;height:26px;border:0;background:transparent;border-radius:5px;color:var(--ink-muted);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;"
+          title="Back"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+        </button>
+        <button
+          onclick="history.forward()"
+          style="width:26px;height:26px;border:0;background:transparent;border-radius:5px;color:var(--ink-muted);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;"
+          title="Forward"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+        </button>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;font:500 13.5px/1 var(--sans);color:var(--ink-muted);">
+        <a href="/app/content" style="text-decoration:none;color:inherit;">{workspaceName}</a>
+        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="color:var(--ink-faint);"><path d="m9 6 6 6-6 6"/></svg>
+        {isInsideFolder ? (
+          <>
+            <a href="/app/content" style="text-decoration:none;color:var(--ink-muted);">All docs</a>
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="color:var(--ink-faint);"><path d="m9 6 6 6-6 6"/></svg>
+            <span style="color:var(--ink);font-weight:600;">{heading}</span>
+          </>
+        ) : (
+          <span style="color:var(--ink);font-weight:600;">All docs</span>
+        )}
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <div id="co-view-seg" style="display:inline-flex;background:var(--surface-2);border:1px solid var(--line);border-radius:6px;padding:2px;">
+        <button data-view="icons" style="width:28px;height:22px;border:0;background:var(--canvas);border-radius:4px;color:var(--ink);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;" title="Icon view">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+        </button>
+        <button data-view="list" style="width:28px;height:22px;border:0;background:transparent;border-radius:4px;color:var(--ink-muted);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;" title="List view">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+        </button>
+      </div>
+      <label class="co-upload-btn" title="Upload .md or .txt files">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Upload
+        <input id="co-upload-inp" type="file" accept=".md,.txt,.markdown" multiple style="display:none" />
+      </label>
+      <label class="co-upload-btn" title="Import DOCX or PDF" id="co-docx-label">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        Import
+        <input id="co-docx-inp" type="file" accept=".docx,.pdf" style="display:none" />
+      </label>
+      <form id="new-doc-form" style="display:flex;align-items:center;gap:6px;">
+        <select id="new-doc-type" style="height:28px;padding:0 8px;border-radius:6px;background:var(--surface-2);color:var(--ink);border:1px solid var(--line);font:500 12px/1 var(--sans);outline:none;cursor:pointer;">
+          <option value="doc">Doc</option>
+          <option value="engineering">Engineering</option>
+          <option value="instruction">Instruction</option>
+          <option value="snippet">Snippet</option>
+        </select>
+        <button type="submit" style="display:inline-flex;align-items:center;gap:5px;padding:5px 10px 5px 8px;border-radius:6px;background:var(--ink);border:1px solid var(--ink);font:500 12px/1 var(--sans);color:var(--on-ink);cursor:pointer;">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>New
+        </button>
+      </form>
+    </div>
+  </Fragment>
+
+  <!-- STATUS LEFT -->
+  <Fragment slot="status-left">
+    <span style="font:500 11px/1 var(--mono);color:var(--ink-muted);">
+      {totalItems} {totalItems === 1 ? 'item' : 'items'}{isInsideFolder ? ` · ${heading}` : ''}
+    </span>
+  </Fragment>
+
+  <!-- RIGHT-CLICK CONTEXT MENU -->
+  <div id="co-ctx-menu" role="menu">
+    <!-- items injected by JS based on what was right-clicked -->
+  </div>
+
+  <!-- OS FILE DROP OVERLAY (shown when dragging files from Finder/Explorer) -->
+  <div id="co-drop-overlay">
+    <div class="co-drop-inner">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" style="color:var(--accent)"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      <p>Drop to import</p>
+      <span>.md and .txt files supported</span>
+    </div>
+  </div>
+
+  <!-- MAIN CONTENT -->
+  <div class="co-main">
+    {totalItems === 0 && !isInsideFolder ? (
+      <div class="co-empty">
+        <span class="co-empty-kicker">Empty workspace</span>
+        <h2>Add your first content unit.</h2>
+        <p>
+          Docs become the building blocks of flows — sequenced context Claude reads in order.
+          Start with one doc, add more, then compose them.
+        </p>
+        <form id="new-doc-form-empty">
+          <button type="submit" class="co-empty-btn">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            Create document
+          </button>
+        </form>
+      </div>
+    ) : isInsideFolder && docs.length === 0 ? (
+      <div class="co-empty">
+        <span class="co-empty-kicker">Empty folder</span>
+        <h2>No docs in this folder yet.</h2>
+        <p>Create a new doc or move existing docs here.</p>
+        <form id="new-doc-form-empty">
+          <button type="submit" class="co-empty-btn">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            Create document here
+          </button>
+        </form>
+      </div>
+    ) : (
+      <>
+      {/* ── RECENTLY OPENED STRIP (hidden until JS populates) ── */}
+      {!isInsideFolder && (
+        <div class="co-recent" id="co-recent-section" style="display:none">
+          <div class="co-section-title">
+            <h3>Recently opened</h3>
+          </div>
+          <div class="co-recent-scroll" id="co-recent-scroll"></div>
+        </div>
+      )}
+
+      {/* ── SORT / FILTER BAR ── */}
+      <div class="co-sortbar" id="co-sortbar">
+        <button class="co-sort-btn active" data-sort="updated" id="sort-updated">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></svg>
+          Recent
+        </button>
+        <button class="co-sort-btn" data-sort="alpha" id="sort-alpha">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 17l4-10 4 10M5.2 13h3.6M15 7v10M18 14l-3 3 3 3"/></svg>
+          A – Z
+        </button>
+        <div class="co-sort-sep"></div>
+        <button class="co-sort-btn" data-type="" id="filter-all">All types</button>
+        <button class="co-sort-btn" data-type="doc" id="filter-doc">Doc</button>
+        <button class="co-sort-btn" data-type="engineering" id="filter-eng">Engineering</button>
+        <button class="co-sort-btn" data-type="instruction" id="filter-inst">Instruction</button>
+        <button class="co-sort-btn" data-type="snippet" id="filter-snip">Snippet</button>
+      </div>
+
+      <div class="co-wrap view-icons" id="co-wrap">
+
+        {/* ── FOLDERS SECTION (root view only) ── */}
+        {!isInsideFolder && (
+          <>
+            <div class="co-section-title">
+              <h3>Folders</h3>
+              <span class="co-count">{folders.length} {folders.length === 1 ? 'item' : 'items'}</span>
+            </div>
+
+            <div class="co-folder-grid" id="co-folder-grid">
+              {folders.map((f) => (
+                <a href={`/app/content?folder=${f.id}`} class="co-tile" data-folder-id={f.id} data-folder-name={f.name}>
+                  <div class="ico-wrap">
+                    <svg class="co-folder-svg" viewBox="0 0 168 130" fill="none" preserveAspectRatio="xMidYMid meet">
+                      <defs>
+                        <linearGradient id={`fgp-${f.id}`} x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0" stop-color="#F5F5F5"/>
+                          <stop offset="1" stop-color="#D6D6D6"/>
+                        </linearGradient>
+                        <linearGradient id={`fgf-${f.id}`} x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0" stop-color="#5C5E64"/>
+                          <stop offset="0.45" stop-color="#3E4046"/>
+                          <stop offset="1" stop-color="#2C2E33"/>
+                        </linearGradient>
+                      </defs>
+                      <g>
+                        <path d="M48 16 L106 16 L116 26 L116 84 Q116 88 112 88 L48 88 Q44 88 44 84 L44 20 Q44 16 48 16 Z" fill={`url(#fgp-${f.id})`}/>
+                        <path d="M106 16 L116 26 L106 26 Z" fill="#B8B8B8"/>
+                      </g>
+                      <path d="M20 42 Q20 38 24 38 L62 38 Q66 38 67.5 35 L70 30 Q71.5 27 75 27 L148 27 Q152 27 152 31 L152 116 Q152 120 148 120 L24 120 Q20 120 20 116 Z" fill={`url(#fgf-${f.id})`}/>
+                      <path d="M20 42 Q20 38 24 38 L62 38 Q66 38 67.5 35 L70 30 Q71.5 27 75 27 L148 27 Q152 27 152 31" stroke="rgba(255,255,255,0.18)" stroke-width="1" fill="none"/>
+                      <rect x="20" y="115" width="132" height="5" rx="2" fill="rgba(0,0,0,0.18)"/>
+                    </svg>
+                  </div>
+                  <div class="t-name" data-tooltip={f.name}>{f.name}</div>
+                  <div class="t-meta">{
+                    (() => {
+                      const total = (f.doc_count ?? 0) + (f.subfolder_count ?? 0);
+                      if (total === 0) return 'Empty';
+                      const parts = [];
+                      if (f.doc_count > 0) parts.push(`${f.doc_count} ${f.doc_count === 1 ? 'doc' : 'docs'}`);
+                      if (f.subfolder_count > 0) parts.push(`${f.subfolder_count} ${f.subfolder_count === 1 ? 'folder' : 'folders'}`);
+                      return parts.join(' · ');
+                    })()
+                  }</div>
+                </a>
+              ))}
+
+              {/* ADD FOLDER TILE */}
+              <div id="co-folder-input-wrap">
+                <div class="ico-wrap">
+                  <svg class="co-folder-svg" viewBox="0 0 168 130" fill="none" preserveAspectRatio="xMidYMid meet">
+                    <defs>
+                      <linearGradient id="fgp-new" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0" stop-color="#F5F5F5"/>
+                        <stop offset="1" stop-color="#D6D6D6"/>
+                      </linearGradient>
+                      <linearGradient id="fgf-new" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0" stop-color="#5C5E64"/>
+                        <stop offset="0.45" stop-color="#3E4046"/>
+                        <stop offset="1" stop-color="#2C2E33"/>
+                      </linearGradient>
+                    </defs>
+                    <g>
+                      <path d="M48 16 L106 16 L116 26 L116 84 Q116 88 112 88 L48 88 Q44 88 44 84 L44 20 Q44 16 48 16 Z" fill="url(#fgp-new)"/>
+                      <path d="M106 16 L116 26 L106 26 Z" fill="#B8B8B8"/>
+                    </g>
+                    <path d="M20 42 Q20 38 24 38 L62 38 Q66 38 67.5 35 L70 30 Q71.5 27 75 27 L148 27 Q152 27 152 31 L152 116 Q152 120 148 120 L24 120 Q20 120 20 116 Z" fill="url(#fgf-new)"/>
+                    <path d="M20 42 Q20 38 24 38 L62 38 Q66 38 67.5 35 L70 30 Q71.5 27 75 27 L148 27 Q152 27 152 31" stroke="rgba(255,255,255,0.18)" stroke-width="1" fill="none"/>
+                    <rect x="20" y="115" width="132" height="5" rx="2" fill="rgba(0,0,0,0.18)"/>
+                  </svg>
+                </div>
+                <input id="co-folder-name-inp" type="text" placeholder="Folder name" maxlength="200" autocomplete="off" />
+              </div>
+
+              <button id="co-add-folder-btn" type="button" class="co-tile-add">
+                <div class="ico-wrap">
+                  <svg width="44" height="44" viewBox="0 0 44 44" fill="none">
+                    <rect x="1" y="1" width="42" height="42" rx="9" stroke="var(--line)" stroke-width="1.5" stroke-dasharray="4 3"/>
+                    <path d="M22 14v16M14 22h16" stroke="var(--ink-muted)" stroke-width="1.5" stroke-linecap="round"/>
+                  </svg>
+                </div>
+                <div class="t-name">New folder</div>
+              </button>
+            </div>
+          </>
+        )}
+
+        {/* ── SUBFOLDERS (inside a folder) ── */}
+        {isInsideFolder && (
+          <>
+            <div class="co-section-title">
+              <h3>Folders</h3>
+              <span class="co-count">{subfolders.length} {subfolders.length === 1 ? 'item' : 'items'}</span>
+            </div>
+            <div class="co-folder-grid" id="co-subfolder-grid">
+              {subfolders.map((f) => (
+                <a href={`/app/content?folder=${f.id}`} class="co-tile" data-folder-id={f.id} data-folder-name={f.name}>
+                  <div class="ico-wrap">
+                    <svg class="co-folder-svg" viewBox="0 0 168 130" fill="none" preserveAspectRatio="xMidYMid meet">
+                      <defs>
+                        <linearGradient id={`fgp-s-${f.id}`} x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0" stop-color="#F5F5F5"/>
+                          <stop offset="1" stop-color="#D6D6D6"/>
+                        </linearGradient>
+                        <linearGradient id={`fgs-${f.id}`} x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0" stop-color="#5C5E64"/>
+                          <stop offset="0.45" stop-color="#3E4046"/>
+                          <stop offset="1" stop-color="#2C2E33"/>
+                        </linearGradient>
+                      </defs>
+                      <g>
+                        <path d="M48 16 L106 16 L116 26 L116 84 Q116 88 112 88 L48 88 Q44 88 44 84 L44 20 Q44 16 48 16 Z" fill={`url(#fgp-s-${f.id})`}/>
+                        <path d="M106 16 L116 26 L106 26 Z" fill="#B8B8B8"/>
+                      </g>
+                      <path d="M20 42 Q20 38 24 38 L62 38 Q66 38 67.5 35 L70 30 Q71.5 27 75 27 L148 27 Q152 27 152 31 L152 116 Q152 120 148 120 L24 120 Q20 120 20 116 Z" fill={`url(#fgs-${f.id})`}/>
+                      <path d="M20 42 Q20 38 24 38 L62 38 Q66 38 67.5 35 L70 30 Q71.5 27 75 27 L148 27 Q152 27 152 31" stroke="rgba(255,255,255,0.18)" stroke-width="1" fill="none"/>
+                      <rect x="20" y="115" width="132" height="5" rx="2" fill="rgba(0,0,0,0.18)"/>
+                    </svg>
+                  </div>
+                  <div class="t-name" data-tooltip={f.name}>{f.name}</div>
+                  <div class="t-meta">{
+                    (() => {
+                      const total = (f.doc_count ?? 0) + (f.subfolder_count ?? 0);
+                      if (total === 0) return 'Empty';
+                      const parts = [];
+                      if (f.doc_count > 0) parts.push(`${f.doc_count} ${f.doc_count === 1 ? 'doc' : 'docs'}`);
+                      if (f.subfolder_count > 0) parts.push(`${f.subfolder_count} ${f.subfolder_count === 1 ? 'folder' : 'folders'}`);
+                      return parts.join(' · ');
+                    })()
+                  }</div>
+                </a>
+              ))}
+
+              {/* ADD SUBFOLDER TILE */}
+              <div id="co-folder-input-wrap">
+                <div class="ico-wrap">
+                  <svg class="co-folder-svg" viewBox="0 0 168 130" fill="none" preserveAspectRatio="xMidYMid meet">
+                    <defs>
+                      <linearGradient id="fgp-sub-new" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0" stop-color="#F5F5F5"/>
+                        <stop offset="1" stop-color="#D6D6D6"/>
+                      </linearGradient>
+                      <linearGradient id="fgf-sub-new" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0" stop-color="#5C5E64"/>
+                        <stop offset="0.45" stop-color="#3E4046"/>
+                        <stop offset="1" stop-color="#2C2E33"/>
+                      </linearGradient>
+                    </defs>
+                    <g>
+                      <path d="M48 16 L106 16 L116 26 L116 84 Q116 88 112 88 L48 88 Q44 88 44 84 L44 20 Q44 16 48 16 Z" fill="url(#fgp-sub-new)"/>
+                      <path d="M106 16 L116 26 L106 26 Z" fill="#B8B8B8"/>
+                    </g>
+                    <path d="M20 42 Q20 38 24 38 L62 38 Q66 38 67.5 35 L70 30 Q71.5 27 75 27 L148 27 Q152 27 152 31 L152 116 Q152 120 148 120 L24 120 Q20 120 20 116 Z" fill="url(#fgf-sub-new)"/>
+                    <path d="M20 42 Q20 38 24 38 L62 38 Q66 38 67.5 35 L70 30 Q71.5 27 75 27 L148 27 Q152 27 152 31" stroke="rgba(255,255,255,0.18)" stroke-width="1" fill="none"/>
+                    <rect x="20" y="115" width="132" height="5" rx="2" fill="rgba(0,0,0,0.18)"/>
+                  </svg>
+                </div>
+                <input id="co-folder-name-inp" type="text" placeholder="Folder name" maxlength="200" autocomplete="off" />
+              </div>
+              <button id="co-add-folder-btn" type="button" class="co-tile-add">
+                <div class="ico-wrap">
+                  <svg width="44" height="44" viewBox="0 0 44 44" fill="none">
+                    <rect x="1" y="1" width="42" height="42" rx="9" stroke="var(--line)" stroke-width="1.5" stroke-dasharray="4 3"/>
+                    <path d="M22 14v16M14 22h16" stroke="var(--ink-muted)" stroke-width="1.5" stroke-linecap="round"/>
+                  </svg>
+                </div>
+                <div class="t-name">New folder</div>
+              </button>
+            </div>
+          </>
+        )}
+
+        {/* ── DOCS SECTION ── */}
+        {(unfiledDocs.length > 0 || (isInsideFolder && docs.length > 0)) && (
+          <>
+            <div class="co-section-title">
+              <h3>{isInsideFolder ? heading : 'Docs'}</h3>
+              <span class="co-count">
+                {isInsideFolder ? docs.length : unfiledDocs.length}
+                {' '}
+                {(isInsideFolder ? docs.length : unfiledDocs.length) === 1 ? 'item' : 'items'}
+              </span>
+            </div>
+
+            {/* UNFILE DROP ZONE — shown only when dragging inside a folder */}
+            {isInsideFolder && (
+              <div id="co-unfile-zone" class="co-unfile-zone">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+                Drop here to move out of folder
+              </div>
+            )}
+
+            {/* ICON GRID */}
+            <div class="co-icon-grid">
+              {(isInsideFolder ? docs : unfiledDocs).map((d) => {
+                const ext = extClass(d);
+                const label = extLabel(d);
+                return (
+                  <a href={`/app/content/${d.id}?back=${backParam}`} class="co-tile" draggable="true" data-doc-id={d.id}>
+                    <div class="ico-wrap">
+                      <div class={`co-fi ${ext}`}>
+                        <div class="sheet">
+                          <div class="lines">
+                            <i></i><i></i><i></i><i></i><i></i>
+                          </div>
+                        </div>
+                        <div class="ext-tag">{label}</div>
+                      </div>
+                    </div>
+                    <div class="t-name" data-tooltip={d.title || 'Untitled'}>{d.title || 'Untitled'}</div>
+                    <div class="t-meta">{relativeTime(d.updated_at)}</div>
+                  </a>
+                );
+              })}
+            </div>
+
+            {/* LIST VIEW */}
+            <div class="co-list">
+              <div class="co-lr head">
+                <span></span>
+                <span>NAME</span>
+                <span>TYPE</span>
+                <span>UPDATED</span>
+                <span>FOLDER</span>
+              </div>
+              {(isInsideFolder ? docs : unfiledDocs).map((d) => {
+                const unread = unreadByDoc.get(d.id) ?? 0;
+                const ext = extClass(d);
+                const label = extLabel(d);
+                return (
+                  <a href={`/app/content/${d.id}?back=${backParam}`} class="co-lr" draggable="true" data-doc-id={d.id}>
+                    <div class="co-ic">
+                      <div class={`co-file-ico ${ext}`}>
+                        <div class="sheet"></div>
+                        <div class="ext">{label}</div>
+                      </div>
+                    </div>
+                    <span class="co-nm">
+                      {unread > 0 && <span class="co-unread" title={`${unread} unread`}></span>}
+                      <span class="co-name" data-tooltip={d.title || 'Untitled'}>{d.title || 'Untitled'}</span>
+                    </span>
+                    <span class="co-type">{d.type ?? 'doc'}</span>
+                    <span class="co-dt">{relativeTime(d.updated_at)}</span>
+                    <span onclick="event.preventDefault();event.stopPropagation();">
+                      <select
+                        class="co-move-sel"
+                        data-doc-id={d.id}
+                        data-current-folder={d.folder_id ?? ''}
+                        title="Move to folder"
+                      >
+                        <option value="">— unfiled —</option>
+                        {folders.map((f) => (
+                          <option value={f.id} selected={f.id === d.folder_id}>{f.name}</option>
+                        ))}
+                      </select>
+                    </span>
+                  </a>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+      </div>
+      </>
+    )}
+  </div>
+
+  <script define:vars={{ folderParam, isInsideFolder, backParam }}>
+    const DOC_DRAG_TYPE = 'application/x-mnema-doc-id';
+
+    // --- Create doc (blank) ---
+    async function createDoc(title = 'Untitled', markdown = '') {
+      const typeEl = document.getElementById('new-doc-type');
+      const type = typeEl?.value ?? 'doc';
+      const body = folderParam
+        ? { title, type, markdown, folder_id: folderParam }
+        : { title, type, markdown };
+      const res = await fetch(`/api/docs`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.message ?? 'Failed to create doc');
+        return null;
+      }
+      const { doc } = await res.json();
+      return doc;
+    }
+
+    document.getElementById('new-doc-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const doc = await createDoc();
+      if (doc) window.location.href = `/app/content/${doc.id}?back=${backParam}`;
+    });
+    document.getElementById('new-doc-form-empty')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const doc = await createDoc();
+      if (doc) window.location.href = `/app/content/${doc.id}?back=${backParam}`;
+    });
+
+    // --- Upload files (.md / .txt → new docs) ---
+    async function importFile(file) {
+      const text = await file.text();
+      const title = file.name.replace(/\.(md|txt|markdown)$/i, '').trim() || 'Untitled';
+      const body = folderParam
+        ? { title, type: 'doc', markdown: text, folder_id: folderParam }
+        : { title, type: 'doc', markdown: text };
+      const res = await fetch(`/api/docs`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      return res.ok ? (await res.json()).doc : null;
+    }
+
+    async function importFiles(files) {
+      const valid = Array.from(files).filter(f => /\.(md|txt|markdown)$/i.test(f.name));
+      if (!valid.length) { alert('Only .md and .txt files are supported'); return; }
+      // Import all, then navigate to the first one
+      const results = await Promise.all(valid.map(importFile));
+      const first = results.find(Boolean);
+      if (first) window.location.href = `/app/content/${first.id}?back=${backParam}`;
+      else window.location.reload();
+    }
+
+    document.getElementById('co-upload-inp')?.addEventListener('change', (e) => {
+      if (e.target.files?.length) void importFiles(e.target.files);
+      e.target.value = ''; // reset so same file can be re-uploaded
+    });
+
+    // ── Import DOCX / PDF ─────────────────────────────────────────────────
+    const docxLabel = document.getElementById('co-docx-label');
+    async function importDocxPdf(file) {
+      const originalText = docxLabel?.querySelector('svg')?.nextSibling;
+      if (docxLabel) docxLabel.setAttribute('data-loading', 'true');
+      const labelSpan = docxLabel?.childNodes[2]; // text node after svg
+      const prevText = docxLabel ? docxLabel.innerHTML : '';
+      if (docxLabel) docxLabel.title = `Processing ${file.name}...`;
+
+      const form = new FormData();
+      // folderId must come BEFORE the file — multipart only captures fields
+      // that appear before the file part in the stream.
+      if (folderParam) form.append('folderId', folderParam);
+      form.append('file', file, file.name);
+
+      try {
+        const res = await fetch('/api/document-files/upload', {
+          method: 'POST',
+          credentials: 'include',
+          body: form,
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          alert(`Import failed: ${err.message ?? res.statusText}`);
+          return;
+        }
+        const { docId } = await res.json();
+        window.location.href = `/app/content/${docId}?back=${backParam}`;
+      } catch (err) {
+        alert(`Import failed: ${String(err)}`);
+      } finally {
+        if (docxLabel) docxLabel.title = 'Import DOCX or PDF';
+      }
+    }
+
+    document.getElementById('co-docx-inp')?.addEventListener('change', (e) => {
+      const file = e.target.files?.[0];
+      if (file) void importDocxPdf(file);
+      e.target.value = '';
+    });
+
+    // --- Create folder (supports nested via parent_id) ---
+    const addBtn = document.getElementById('co-add-folder-btn');
+    const inputWrap = document.getElementById('co-folder-input-wrap');
+    const nameInp = document.getElementById('co-folder-name-inp');
+
+    addBtn?.addEventListener('click', () => {
+      addBtn.style.display = 'none';
+      inputWrap?.classList.add('visible');
+      nameInp?.focus();
+    });
+
+    async function submitFolder() {
+      const name = nameInp?.value?.trim();
+      if (!name) { cancelFolder(); return; }
+      const body = folderParam ? { name, parent_id: folderParam } : { name };
+      const res = await fetch(`/api/folders`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) { alert('Failed to create folder'); return; }
+      window.location.reload();
+    }
+
+    function cancelFolder() {
+      if (inputWrap) inputWrap.classList.remove('visible');
+      if (addBtn) addBtn.style.display = '';
+      if (nameInp) nameInp.value = '';
+    }
+
+    nameInp?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); void submitFolder(); }
+      if (e.key === 'Escape') cancelFolder();
+    });
+    nameInp?.addEventListener('blur', () => {
+      setTimeout(() => {
+        if (document.activeElement !== nameInp) {
+          if (nameInp?.value?.trim()) { void submitFolder(); } else { cancelFolder(); }
+        }
+      }, 150);
+    });
+
+    // ── RIGHT-CLICK CONTEXT MENU ─────────────────────────────────────────
+    const ctxMenu = document.getElementById('co-ctx-menu');
+    let ctxTarget = null; // { type: 'doc'|'folder', id, name, el }
+
+    function hideCtx() {
+      if (ctxMenu) ctxMenu.classList.remove('visible');
+      ctxTarget = null;
+    }
+
+    function showCtx(x, y, items) {
+      if (!ctxMenu) return;
+      // Build menu items
+      ctxMenu.innerHTML = items.map(item => {
+        if (item === '---') return '<div class="co-ctx-sep"></div>';
+        const dangerClass = item.danger ? ' danger' : '';
+        return `<div class="co-ctx-item${dangerClass}" data-action="${item.action}">${item.icon ?? ''}${item.label}</div>`;
+      }).join('');
+      // Position near cursor, flip if off-screen
+      ctxMenu.style.left = '0px';
+      ctxMenu.style.top = '0px';
+      ctxMenu.classList.add('visible');
+      const mw = ctxMenu.offsetWidth;
+      const mh = ctxMenu.offsetHeight;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      ctxMenu.style.left = (x + mw > vw ? x - mw : x) + 'px';
+      ctxMenu.style.top  = (y + mh > vh ? y - mh : y) + 'px';
+    }
+
+    function iconSvg(path, size = 14) {
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`;
+    }
+
+    // Build menu for a doc tile
+    function docCtxItems() {
+      return [
+        { action: 'preview', label: 'Preview',      icon: iconSvg('<path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/>') },
+        { action: 'open',   label: 'Open',         icon: iconSvg('<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>') },
+        { action: 'rename', label: 'Rename',        icon: iconSvg('<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>') },
+        '---',
+        { action: 'delete', label: 'Delete',        icon: iconSvg('<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>'), danger: true },
+      ];
+    }
+
+    // Build menu for a folder tile
+    function folderCtxItems() {
+      return [
+        { action: 'open',    label: 'Open',          icon: iconSvg('<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>') },
+        { action: 'rename',  label: 'Rename',        icon: iconSvg('<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>') },
+        { action: 'new-sub', label: 'New folder inside', icon: iconSvg('<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/>') },
+        '---',
+        { action: 'delete',  label: 'Delete',        icon: iconSvg('<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/>'), danger: true },
+      ];
+    }
+
+    // Attach contextmenu to doc tiles
+    document.querySelectorAll('.co-tile[data-doc-id], .co-lr[data-doc-id]').forEach(el => {
+      el.addEventListener('contextmenu', e => {
+        e.preventDefault();
+        ctxTarget = { type: 'doc', id: el.dataset.docId, name: el.querySelector('.t-name,.co-name')?.textContent?.trim() ?? '', el, href: el.href };
+        showCtx(e.clientX + 2, e.clientY + 2, docCtxItems());
+      });
+    });
+
+    // Attach contextmenu to folder tiles
+    document.querySelectorAll('.co-tile[data-folder-id]').forEach(el => {
+      el.addEventListener('contextmenu', e => {
+        e.preventDefault();
+        ctxTarget = { type: 'folder', id: el.dataset.folderId, name: el.dataset.folderName ?? '', el };
+        showCtx(e.clientX + 2, e.clientY + 2, folderCtxItems());
+      });
+    });
+
+    // Handle menu item clicks
+    ctxMenu?.addEventListener('click', async e => {
+      const item = e.target.closest('[data-action]');
+      if (!item || !ctxTarget) return;
+      const action = item.dataset.action;
+      const t = ctxTarget;
+      hideCtx();
+
+      if (action === 'preview' && t.type === 'doc') {
+        window.dispatchEvent(new CustomEvent('mnema:preview-doc', { detail: { docId: t.id } }));
+        return;
+      }
+
+      if (action === 'open') {
+        if (t.type === 'doc') window.location.href = t.href ?? `/app/content/${t.id}?back=${backParam}`;
+        else window.location.href = `/app/content?folder=${t.id}`;
+        return;
+      }
+
+      if (action === 'rename' && t.type === 'doc') {
+        const newName = window.prompt('Rename doc:', t.name);
+        if (!newName?.trim() || newName.trim() === t.name) return;
+        const res = await fetch(`/api/docs/${t.id}`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: newName.trim() }),
+        });
+        if (res.ok) {
+          // Update the title in place on all matching elements (icon + list view).
+          document.querySelectorAll(`[data-doc-id="${t.id}"] .t-name, [data-doc-id="${t.id}"] .co-name`).forEach(el => {
+            el.textContent = newName.trim();
+          });
+        } else {
+          alert('Failed to rename doc');
+        }
+        return;
+      }
+
+      if (action === 'rename' && t.type === 'folder') {
+        const newName = window.prompt('Rename folder:', t.name);
+        if (!newName?.trim() || newName.trim() === t.name) return;
+        const res = await fetch(`/api/folders/${t.id}`, {
+          method: 'PATCH',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: newName.trim() }),
+        });
+        if (res.ok) window.location.reload();
+        else alert('Failed to rename folder');
+        return;
+      }
+
+      if (action === 'new-sub' && t.type === 'folder') {
+        const name = window.prompt('New folder name:');
+        if (!name?.trim()) return;
+        const res = await fetch(`/api/folders`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: name.trim(), parent_id: t.id }),
+        });
+        if (res.ok) window.location.href = `/app/content?folder=${t.id}`;
+        else alert('Failed to create folder');
+        return;
+      }
+
+      if (action === 'delete') {
+        if (t.type === 'doc') {
+          if (!confirm(`Delete "${t.name}"? This cannot be undone.`)) return;
+          const res = await fetch(`/api/docs/${t.id}`, {
+            method: 'DELETE', credentials: 'include', headers: {},
+          });
+          if (res.ok || res.status === 204) window.location.reload();
+          else alert('Failed to delete doc');
+        } else {
+          if (!confirm(`Delete folder "${t.name}"? Docs inside will become unfiled.`)) return;
+          const res = await fetch(`/api/folders/${t.id}`, {
+            method: 'DELETE', credentials: 'include', headers: {},
+          });
+          if (res.ok || res.status === 204) window.location.reload();
+          else alert('Failed to delete folder');
+        }
+        return;
+      }
+    });
+
+    // Dismiss on outside click / Escape
+    document.addEventListener('click', e => {
+      if (ctxMenu && !ctxMenu.contains(e.target)) hideCtx();
+    });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') hideCtx();
+    });
+
+    // --- Move doc to folder (list view select) ---
+    document.querySelectorAll('.co-move-sel').forEach((sel) => {
+      sel.addEventListener('change', async (e) => {
+        const docId = e.target.dataset.docId;
+        const folderId = e.target.value || null;
+        if (!docId) return;
+        await fetch(`/api/docs/${docId}/folder`, {
+          method: 'PATCH',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ folder_id: folderId }),
+        });
+        window.location.reload();
+      });
+    });
+
+    // --- View toggle ---
+    const coViewSeg = document.getElementById('co-view-seg');
+    const coWrap = document.getElementById('co-wrap');
+    coViewSeg?.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-view]');
+      if (!btn || !coWrap) return;
+      const v = btn.dataset.view;
+      coWrap.classList.remove('view-icons', 'view-list');
+      coWrap.classList.add('view-' + v);
+      coViewSeg.querySelectorAll('button').forEach((b) => {
+        const isActive = b.dataset.view === v;
+        b.style.background = isActive ? 'var(--canvas)' : 'transparent';
+        b.style.color = isActive ? 'var(--ink)' : 'var(--ink-muted)';
+      });
+    });
+
+    // ── WITHIN-APP DRAG (move docs between folders) ──────────────────────
+    // Uses a custom MIME type so it never conflicts with OS file drops or
+    // the browser's default link-drag behaviour on <a> elements.
+    let draggingDocId = null;
+    const unfileZone = document.getElementById('co-unfile-zone');
+
+    async function moveDocToFolder(docId, folderId) {
+      const res = await fetch(`/api/docs/${docId}/folder`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folder_id: folderId }),
+      });
+      if (res.ok) window.location.reload();
+    }
+
+    document.querySelectorAll('.co-tile[data-doc-id], .co-lr[data-doc-id]').forEach((el) => {
+      el.addEventListener('dragstart', (e) => {
+        draggingDocId = el.dataset.docId;
+        // Custom type prevents conflict with link/URL drag and OS file drops
+        e.dataTransfer.setData(DOC_DRAG_TYPE, draggingDocId);
+        e.dataTransfer.setData('text/plain', draggingDocId); // fallback
+        e.dataTransfer.effectAllowed = 'move';
+        setTimeout(() => el.classList.add('co-dragging'), 0);
+        if (unfileZone) unfileZone.classList.add('co-drag-active');
+      });
+      el.addEventListener('dragend', () => {
+        el.classList.remove('co-dragging');
+        draggingDocId = null;
+        if (unfileZone) {
+          unfileZone.classList.remove('co-drag-active', 'co-drag-over');
+        }
+      });
+    });
+
+    // Folder tiles as drop targets (only accept within-app doc drags)
+    document.querySelectorAll('.co-tile[data-folder-id]').forEach((folder) => {
+      folder.addEventListener('dragover', (e) => {
+        if (!e.dataTransfer.types.includes(DOC_DRAG_TYPE) && !draggingDocId) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        folder.classList.add('co-drag-over');
+      });
+      folder.addEventListener('dragleave', (e) => {
+        if (!folder.contains(e.relatedTarget)) folder.classList.remove('co-drag-over');
+      });
+      folder.addEventListener('drop', (e) => {
+        e.preventDefault();
+        folder.classList.remove('co-drag-over');
+        const docId = e.dataTransfer.getData(DOC_DRAG_TYPE) || draggingDocId;
+        const folderId = folder.dataset.folderId;
+        if (docId && folderId) void moveDocToFolder(docId, folderId);
+      });
+    });
+
+    // Unfile drop zone
+    if (unfileZone) {
+      unfileZone.addEventListener('dragover', (e) => {
+        if (!e.dataTransfer.types.includes(DOC_DRAG_TYPE) && !draggingDocId) return;
+        e.preventDefault();
+        unfileZone.classList.add('co-drag-over');
+      });
+      unfileZone.addEventListener('dragleave', () => unfileZone.classList.remove('co-drag-over'));
+      unfileZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        unfileZone.classList.remove('co-drag-over');
+        const docId = e.dataTransfer.getData(DOC_DRAG_TYPE) || draggingDocId;
+        if (docId) void moveDocToFolder(docId, null);
+      });
+    }
+
+    // ── OS FILE DROP (import .md/.txt from Finder/Explorer) ──────────────
+    const dropOverlay = document.getElementById('co-drop-overlay');
+    let osDropCounter = 0;
+
+    window.addEventListener('dragenter', (e) => {
+      if (!e.dataTransfer.types.includes('Files')) return;
+      osDropCounter++;
+      if (dropOverlay) dropOverlay.classList.add('visible');
+    });
+    window.addEventListener('dragleave', (e) => {
+      if (!e.dataTransfer.types.includes('Files')) return;
+      osDropCounter = Math.max(0, osDropCounter - 1);
+      if (osDropCounter === 0 && dropOverlay) dropOverlay.classList.remove('visible');
+    });
+    window.addEventListener('dragover', (e) => {
+      if (e.dataTransfer.types.includes('Files')) e.preventDefault();
+    });
+    window.addEventListener('drop', (e) => {
+      if (!e.dataTransfer.files?.length) return;
+      e.preventDefault();
+      osDropCounter = 0;
+      if (dropOverlay) dropOverlay.classList.remove('visible');
+      const files = Array.from(e.dataTransfer.files);
+      const docxPdf = files.filter(f => /\.(docx|pdf)$/i.test(f.name));
+      const mdTxt   = files.filter(f => /\.(md|txt|markdown)$/i.test(f.name));
+      if (docxPdf.length) void importDocxPdf(docxPdf[0]);
+      if (mdTxt.length)   void importFiles(mdTxt);
+    });
+  </script>
+
+  <script>
+    // ── RECENTLY OPENED ───────────────────────────────────────────────────────
+    // Track the last 8 docs opened. Store { id, title, href, ts } in localStorage.
+    const RECENT_KEY = 'mnema_recent_docs';
+    const RECENT_MAX = 8;
+
+    function getRecent() {
+      try { return JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]'); } catch { return []; }
+    }
+    function saveRecent(list) {
+      localStorage.setItem(RECENT_KEY, JSON.stringify(list));
+    }
+    // Record open when a doc tile is clicked
+    document.querySelectorAll('a[data-doc-id]').forEach(a => {
+      a.addEventListener('click', () => {
+        const id    = a.dataset.docId ?? '';
+        const title = a.querySelector<HTMLElement>('.t-name,.co-name')?.textContent?.trim() ?? 'Untitled';
+        const href  = a.href;
+        if (!id) return;
+        const list  = getRecent().filter(r => r.id !== id);
+        list.unshift({ id, title, href, ts: Date.now() });
+        saveRecent(list.slice(0, RECENT_MAX));
+      });
+    });
+
+    // Render the recently opened strip
+    function relTime(ts: number): string {
+      const s = Math.floor((Date.now() - ts) / 1000);
+      if (s < 60)   return 'just now';
+      if (s < 3600) return Math.floor(s/60) + 'm ago';
+      if (s < 86400)return Math.floor(s/3600) + 'h ago';
+      return Math.floor(s/86400) + 'd ago';
+    }
+
+    const recentSection = document.getElementById('co-recent-section');
+    const recentScroll  = document.getElementById('co-recent-scroll');
+    if (recentScroll) {
+      const list = getRecent();
+      if (list.length > 0) {
+        recentScroll.innerHTML = list.map(r => `
+          <a class="co-recent-item" href="${r.href}" data-doc-id="${r.id}">
+            <div class="co-recent-icon">
+              <svg width="9" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+              </svg>
+            </div>
+            <div>
+              <div class="co-recent-name">${r.title.replace(/</g,'&lt;')}</div>
+              <div class="co-recent-time">${relTime(r.ts)}</div>
+            </div>
+          </a>`).join('');
+        if (recentSection) recentSection.style.display = '';
+        // Wire click tracking on recently opened items too
+        recentScroll.querySelectorAll('a[data-doc-id]').forEach(a => {
+          a.addEventListener('click', () => {
+            const id    = a.dataset.docId ?? '';
+            const title = a.querySelector<HTMLElement>('.co-recent-name')?.textContent?.trim() ?? '';
+            const href  = a.href;
+            if (!id) return;
+            const l = getRecent().filter(r => r.id !== id);
+            l.unshift({ id, title, href, ts: Date.now() });
+            saveRecent(l.slice(0, RECENT_MAX));
+          });
+        });
+      }
+    }
+
+    // ── SORT & FILTER ─────────────────────────────────────────────────────────
+    // All sorting/filtering is client-side — tiles are already in the DOM.
+    const allTiles = Array.from(document.querySelectorAll('.co-icon-grid a[data-doc-id]'));
+    const allRows  = Array.from(document.querySelectorAll('.co-list a[data-doc-id]'));
+    const iconGrid = document.querySelector('.co-icon-grid');
+    const listGrid = document.querySelector('.co-list');
+
+    let currentSort = 'updated'; // 'updated' | 'alpha'
+    let currentType = '';        // '' = all
+
+    function applyFilters() {
+      const items = [...allTiles, ...allRows];
+      items.forEach(el => {
+        const type = el.querySelector<HTMLElement>('.co-type')?.textContent?.trim() ?? '';
+        const show = !currentType || type === currentType;
+        el.style.display = show ? '' : 'none';
+      });
+      // Re-sort visible tiles
+      if (iconGrid) {
+        const visible = allTiles.filter(el => el.style.display !== 'none');
+        if (currentSort === 'alpha') {
+          visible.sort((a, b) => {
+            const ta = a.querySelector('.t-name')?.textContent?.trim() ?? '';
+            const tb = b.querySelector('.t-name')?.textContent?.trim() ?? '';
+            return ta.localeCompare(tb);
+          });
+        } else {
+          // 'updated' — restore original DOM order (already sorted by server)
+          allTiles.forEach(el => { if (el.style.display !== 'none') iconGrid.appendChild(el); });
+          return;
+        }
+        visible.forEach(el => iconGrid.appendChild(el));
+      }
+      if (listGrid && currentSort === 'alpha') {
+        const head = listGrid.querySelector('.co-lr.head');
+        const visible = allRows.filter(el => el.style.display !== 'none');
+        visible.sort((a, b) => {
+          const ta = a.querySelector('.co-name')?.textContent?.trim() ?? '';
+          const tb = b.querySelector('.co-name')?.textContent?.trim() ?? '';
+          return ta.localeCompare(tb);
+        });
+        visible.forEach(el => listGrid.appendChild(el));
+      }
+    }
+
+    // Sort buttons
+    document.querySelectorAll('.co-sort-btn[data-sort]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        currentSort = btn.dataset.sort ?? 'updated';
+        document.querySelectorAll('.co-sort-btn[data-sort]').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        applyFilters();
+      });
+    });
+
+    // Type filter buttons
+    document.querySelectorAll('.co-sort-btn[data-type]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        currentType = btn.dataset.type ?? '';
+        document.querySelectorAll('.co-sort-btn[data-type]').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        applyFilters();
+      });
+    });
+
+    // Set "All types" as active by default
+    document.querySelector('.co-sort-btn[data-type=""]')?.classList.add('active');
+  </script>
+</AppLayout>

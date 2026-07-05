@@ -1,0 +1,16 @@
+---
+import BaseLayout from '../../../../layouts/BaseLayout.astro';
+import { SharedFlowView } from '../../../../components/flows/SharedFlowView';
+
+// Any logged-in Mnema user may view a shared flow; gate on auth only.
+const auth = Astro.locals.auth;
+if (!auth) return Astro.redirect('/auth/login');
+
+const { token } = Astro.params;
+---
+
+<BaseLayout title="Shared flow · Mnema">
+  <main style="min-height:100vh;background:var(--canvas, #0A0B0D);">
+    <SharedFlowView token={token ?? ''} client:load />
+  </main>
+</BaseLayout>

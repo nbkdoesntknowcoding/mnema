@@ -1,0 +1,17 @@
+---
+import SettingsLayout from '../../../layouts/SettingsLayout.astro';
+import { ApiKeys } from '../../../components/settings/ApiKeys';
+
+const auth = Astro.locals.auth;
+if (!auth) {
+  return Astro.redirect('/auth/login');
+}
+---
+
+<SettingsLayout title="API Keys">
+  <p style="font:500 11px/1 var(--mono);letter-spacing:0.08em;text-transform:uppercase;color:var(--ink-muted);margin:0 0 12px;">Settings</p>
+  <h1 style="margin:0;font:500 28px/1.15 var(--sans);letter-spacing:-0.02em;color:var(--ink);">API Keys</h1>
+  <p style="margin:6px 0 36px;font-size:14px;color:var(--ink-soft);max-width:36rem;">Connect ChatGPT, Gemini, or any REST client to your Mnema workspace.</p>
+
+  <ApiKeys client:load />
+</SettingsLayout>

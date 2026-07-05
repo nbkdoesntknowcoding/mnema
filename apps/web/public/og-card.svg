@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <!--
+    Mnema OG card — updated Phase 12 with real logo.
+    Renders cleanly in Slack, Twitter, LinkedIn link previews.
+  -->
+  <!-- Background -->
+  <rect width="1200" height="630" fill="#000"/>
+  <!-- Subtle inner border -->
+  <rect x="1" y="1" width="1198" height="628" fill="none" stroke="#1c1c1c" stroke-width="2"/>
+
+  <!-- μ mark (logo scaled 3×: viewBox 100→300, positioned top-left area) -->
+  <g transform="translate(90, 135)">
+    <!-- 300×300 canvas, black bg (inherits from page) -->
+    <!-- left stem: x=24*3=72, y=13*3=39, w=11*3=33, h=74*3=222 -->
+    <rect x="72" y="39" width="33" height="222" fill="#EDE8DC"/>
+    <!-- right stem: x=65*3=195, y=13*3=39, w=11*3=33, h=47*3=141 -->
+    <rect x="195" y="39" width="33" height="141" fill="#EDE8DC"/>
+    <!-- arch: scaled coords (×3) -->
+    <path fill="#EDE8DC" d="M72,180 C72,240 228,240 228,180 L195,180 C195,219 105,219 105,180 Z"/>
+  </g>
+
+  <!-- Wordmark -->
+  <text x="490" y="278" fill="#EDEDED" font-family="Geist, -apple-system, BlinkMacSystemFont, sans-serif" font-size="100" font-weight="600" letter-spacing="-3">Mnema</text>
+  <!-- Tagline -->
+  <text x="492" y="345" fill="#555" font-family="Geist, -apple-system, BlinkMacSystemFont, sans-serif" font-size="30" font-weight="400" letter-spacing="-0.3">The live context engine for AI-native teams.</text>
+
+  <!-- Bottom rule + URL -->
+  <line x1="490" y1="520" x2="700" y2="520" stroke="#222" stroke-width="1.5"/>
+  <text x="490" y="558" fill="#333" font-family="Geist, -apple-system, BlinkMacSystemFont, sans-serif" font-size="22" font-weight="400">mnema.example.com</text>
+</svg>

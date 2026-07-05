@@ -1,0 +1,481 @@
+---
+import AppLayout from '../../layouts/AppLayout.astro';
+
+const auth = Astro.locals.auth;
+if (!auth) {
+  return Astro.redirect('/auth/login');
+}
+
+const domainPart = auth.email?.split('@')[1]?.split('.')[0] ?? '';
+const workspaceName = domainPart
+  ? domainPart.charAt(0).toUpperCase() + domainPart.slice(1)
+  : 'Workspace';
+---
+
+<style>
+  .tr-main { max-width: 880px; margin: 0 auto; padding: 40px 32px 100px; }
+
+  .tr-pre {
+    font: 500 11px/1 var(--mono); letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--ink-muted); margin-bottom: 12px;
+  }
+  .tr-page-head {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 16px; margin-bottom: 22px;
+  }
+  .tr-page-head h1 {
+    margin: 0; font: 500 28px/1.15 var(--sans); letter-spacing: -0.02em;
+  }
+  .tr-page-head .tr-sub {
+    margin: 6px 0 0; font-size: 14px; color: var(--ink-soft); max-width: 36rem;
+  }
+
+  .tr-btn {
+    font: 500 12.5px/1 var(--sans); padding: 8px 12px; border-radius: 6px;
+    cursor: pointer; border: 1px solid transparent;
+    display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  }
+  .tr-btn-secondary {
+    background: var(--surface); color: var(--ink); border-color: var(--line-strong);
+  }
+  .tr-btn-secondary:hover { background: var(--surface-2); border-color: var(--line-bright); }
+  .tr-btn-danger {
+    background: rgba(255,122,138,0.10); color: var(--status-error);
+    border-color: rgba(255,122,138,0.30);
+  }
+  .tr-btn-danger:hover { background: rgba(255,122,138,0.18); border-color: var(--status-error); }
+  .tr-btn-ghost { background: transparent; color: var(--ink-soft); }
+  .tr-btn-ghost:hover { background: var(--surface-2); color: var(--ink); }
+
+  /* FILTER CHIPS */
+  .tr-chips { display: flex; gap: 6px; margin-bottom: 14px; }
+  .tr-chip {
+    font: 500 12px/1 var(--sans); padding: 6px 11px; border-radius: 999px;
+    background: transparent; border: 1px solid transparent;
+    color: var(--ink-muted); cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .tr-chip:hover { color: var(--ink); background: var(--surface-2); }
+  .tr-chip.active {
+    background: var(--surface-2); color: var(--ink); border-color: var(--line);
+  }
+  .tr-chip .ct {
+    font: 500 10.5px/1 var(--mono); color: var(--ink-faint); letter-spacing: 0.02em;
+  }
+  .tr-chip.active .ct { color: var(--ink-muted); }
+
+  .tr-meta-line {
+    font: 500 11px/1 var(--mono); letter-spacing: 0.04em;
+    color: var(--ink-muted); margin: 0 0 8px;
+    display: flex; align-items: center; gap: 14px;
+  }
+  .tr-meta-line .v { color: var(--ink-soft); font-weight: 600; }
+  .tr-meta-line .sep { color: var(--ink-faint); }
+
+  /* LIST */
+  .tr-list { display: flex; flex-direction: column; border-top: 1px solid var(--line); }
+  .tr-row {
+    display: grid;
+    grid-template-columns: 24px 24px minmax(0,1fr) 200px 130px 180px;
+    align-items: center; gap: 12px; padding: 0 12px; height: 62px;
+    border-bottom: 1px solid var(--line); cursor: default; position: relative;
+  }
+  .tr-row:hover { background: var(--surface); }
+  .tr-row:hover .tr-actions { opacity: 1; }
+  .tr-row.selected { background: var(--accent-soft); }
+  .tr-row.selected::before {
+    content: ""; position: absolute; left: 0; top: 10px; bottom: 10px;
+    width: 2px; background: var(--accent); border-radius: 2px;
+  }
+
+  .tr-check {
+    width: 16px; height: 16px; border-radius: 4px;
+    background: transparent; border: 1.5px solid var(--line-strong);
+    cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+    color: var(--on-ink);
+  }
+  .tr-check:hover { border-color: var(--line-bright); }
+  .tr-check.on { background: var(--accent); border-color: var(--accent); }
+  .tr-check.on svg { display: block; }
+  .tr-check svg { display: none; }
+
+  .tr-ico {
+    width: 24px; height: 24px; border-radius: 6px;
+    background: var(--surface-2); border: 1px solid var(--line);
+    color: var(--ink-soft);
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .tr-ico.flow { color: var(--status-edit); }
+
+  .tr-title {
+    font: 500 14px/1.3 var(--sans); color: var(--ink-soft);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+
+  .tr-deleted-by {
+    display: flex; align-items: center; gap: 8px;
+    font: 400 12.5px/1.3 var(--sans); color: var(--ink-muted); min-width: 0;
+  }
+  .tr-deleted-by .av {
+    width: 18px; height: 18px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    font: 700 9.5px var(--sans); color: white; flex-shrink: 0;
+  }
+  .tr-deleted-by .av.a { background: linear-gradient(135deg,#FFB370,#FF7A8A); }
+  .tr-deleted-by .av.b { background: linear-gradient(135deg,#7C9CFF,#C8A2FF); }
+  .tr-deleted-by .av.c { background: linear-gradient(135deg,#6BE39B,#2B9B9B); }
+  .tr-deleted-by .name {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-soft);
+  }
+  .tr-deleted-by .when {
+    margin-left: auto; font: 500 11px var(--mono); color: var(--ink-muted); flex-shrink: 0;
+  }
+
+  .tr-expires {
+    font: 500 11px/1 var(--mono); color: var(--ink-muted);
+    letter-spacing: 0.02em; text-align: right;
+  }
+  .tr-expires.warn { color: var(--status-error); }
+  .tr-expires.warn::before {
+    content: "●"; color: var(--status-error); font-size: 8px;
+    margin-right: 5px; vertical-align: middle;
+  }
+
+  .tr-actions {
+    display: flex; gap: 4px; justify-content: flex-end; opacity: 0;
+    transition: opacity 140ms ease;
+  }
+  .tr-row.selected .tr-actions { opacity: 1; }
+  .tr-act-btn {
+    font: 500 11.5px/1 var(--sans); padding: 5px 10px; border-radius: 5px;
+    background: transparent; border: 1px solid var(--line);
+    color: var(--ink-soft); cursor: pointer;
+  }
+  .tr-act-btn:hover { color: var(--ink); border-color: var(--line-strong); background: var(--surface-2); }
+  .tr-act-btn.danger:hover { color: var(--status-error); border-color: var(--status-error); background: transparent; }
+
+  /* EMPTY STATE */
+  .tr-empty {
+    display: none; flex-direction: column; align-items: center;
+    text-align: center; padding: 80px 24px;
+  }
+  .tr-empty.active { display: flex; }
+  .tr-empty .ic {
+    width: 48px; height: 48px; border-radius: 12px;
+    background: var(--surface); border: 1px solid var(--line);
+    color: var(--ink-soft);
+    display: inline-flex; align-items: center; justify-content: center;
+    margin-bottom: 16px;
+  }
+  .tr-empty h3 { margin: 0 0 8px; font: 500 16px/1.3 var(--sans); letter-spacing: -0.005em; }
+  .tr-empty p { margin: 0; font-size: 13px; color: var(--ink-muted); line-height: 1.55; max-width: 24rem; }
+
+  .tr-list.hidden { display: none; }
+  .tr-meta-line.hidden { display: none; }
+
+  /* BULK BAR */
+  .tr-bulkbar {
+    position: fixed; left: 50%; bottom: 48px;
+    transform: translateX(-50%) translateY(110%);
+    background: var(--surface); border: 1px solid var(--line-strong);
+    border-radius: 12px; padding: 8px 12px;
+    display: flex; align-items: center; gap: 12px;
+    box-shadow: 0 30px 60px -20px rgba(0,0,0,0.6);
+    z-index: 30; transition: transform 240ms cubic-bezier(0.16,1,0.3,1);
+  }
+  .tr-bulkbar.active { transform: translateX(-50%) translateY(0); }
+  .tr-bulkbar .count {
+    display: inline-flex; align-items: center; gap: 8px;
+    font: 500 12px/1 var(--sans); color: var(--ink-soft);
+    padding-right: 10px; border-right: 1px solid var(--line);
+  }
+  .tr-bulkbar .count .n {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--accent); color: var(--on-ink);
+    font: 700 11px/1 var(--mono);
+  }
+  .tr-bulkbar .bb-actions { display: flex; gap: 6px; }
+  .tr-bulkbar .clear {
+    font: 500 11.5px var(--sans); background: transparent; border: 0;
+    color: var(--ink-muted); cursor: pointer; padding: 6px 4px;
+  }
+  .tr-bulkbar .clear:hover { color: var(--ink); }
+
+  /* CONFIRM MODAL */
+  .tr-overlay {
+    position: fixed; inset: 0; background: rgba(10,11,13,0.80);
+    backdrop-filter: blur(8px); display: none;
+    align-items: center; justify-content: center; z-index: 60;
+  }
+  .tr-overlay.active { display: flex; }
+  .tr-confirm {
+    width: 100%; max-width: 460px; background: var(--surface);
+    border: 1px solid rgba(255,122,138,0.32); border-radius: 12px;
+    box-shadow: 0 30px 80px -20px rgba(0,0,0,0.7); overflow: hidden;
+  }
+  .tr-confirm-head {
+    padding: 16px 20px 12px; display: flex; align-items: center; gap: 10px;
+    border-bottom: 1px solid var(--line);
+  }
+  .tr-confirm-head .ic {
+    width: 28px; height: 28px; border-radius: 7px;
+    background: rgba(255,122,138,0.14); border: 1px solid rgba(255,122,138,0.32);
+    color: var(--status-error);
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .tr-confirm-head h3 { margin: 0; font: 500 14.5px/1 var(--sans); color: var(--ink); }
+  .tr-confirm-body { padding: 16px 20px 18px; }
+  .tr-confirm-body p { margin: 0 0 10px; font: 400 13px/1.55 var(--sans); color: var(--ink-soft); }
+  .tr-confirm-body p strong { color: var(--ink); font-weight: 600; }
+  .tr-confirm-foot {
+    padding: 12px 20px; display: flex; justify-content: flex-end; gap: 8px;
+    background: var(--surface-2); border-top: 1px solid var(--line);
+  }
+</style>
+
+<AppLayout title="Trash — Mnema" workspaceName={workspaceName} email={auth.email}>
+
+  <Fragment slot="status-left">
+    <span style="font:500 11px/1 var(--mono);color:var(--ink-muted);">7 items · auto-purges after 30 days</span>
+  </Fragment>
+
+  <div class="ap-main" style="overflow-y:auto;">
+  <div class="tr-main">
+
+    <div class="tr-page-head">
+      <div>
+        <p class="tr-pre">TRASH</p>
+        <h1>Deleted items</h1>
+        <p class="tr-sub">Items are permanently deleted after 30 days. Restore anything to put it back where it was.</p>
+      </div>
+      <button class="tr-btn tr-btn-secondary" id="tr-empty-btn">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        Empty trash
+      </button>
+    </div>
+
+    <div class="tr-chips" id="tr-chips">
+      <button class="tr-chip active" data-type="all">All<span class="ct">7</span></button>
+      <button class="tr-chip" data-type="doc">Docs<span class="ct">5</span></button>
+      <button class="tr-chip" data-type="flow">Flows<span class="ct">2</span></button>
+    </div>
+
+    <div class="tr-meta-line" id="tr-meta-line">
+      <span><span class="v" id="tr-visible-count">7</span> items in trash</span>
+      <span class="sep">·</span>
+      <span>Auto-purges after <span class="v">30 days</span></span>
+    </div>
+
+    <div class="tr-list" id="tr-list">
+
+      <div class="tr-row" data-type="doc">
+        <button class="tr-check"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></button>
+        <span class="tr-ico"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></span>
+        <span class="tr-title">Old onboarding playbook (v1)</span>
+        <span class="tr-deleted-by"><span class="av a">A</span><span class="name">alex@example.com</span><span class="when">2d ago</span></span>
+        <span class="tr-expires warn">3 days left</span>
+        <div class="tr-actions">
+          <button class="tr-act-btn">Restore</button>
+          <button class="tr-act-btn danger">Delete</button>
+        </div>
+      </div>
+
+      <div class="tr-row" data-type="doc">
+        <button class="tr-check"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></button>
+        <span class="tr-ico"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></span>
+        <span class="tr-title">Pricing-strategy-draft.md</span>
+        <span class="tr-deleted-by"><span class="av b">S</span><span class="name">sam@example.com</span><span class="when">5d ago</span></span>
+        <span class="tr-expires warn">6 days left</span>
+        <div class="tr-actions">
+          <button class="tr-act-btn">Restore</button>
+          <button class="tr-act-btn danger">Delete</button>
+        </div>
+      </div>
+
+      <div class="tr-row" data-type="flow">
+        <button class="tr-check"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></button>
+        <span class="tr-ico flow"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="3" width="6" height="6" rx="1"/><rect x="3" y="15" width="6" height="6" rx="1"/><path d="M9 6h4a2 2 0 0 1 2 2v10M9 18h6"/></svg></span>
+        <span class="tr-title">Customer-call recap (experimental)</span>
+        <span class="tr-deleted-by"><span class="av c">J</span><span class="name">jordan@example.com</span><span class="when">8d ago</span></span>
+        <span class="tr-expires">22 days left</span>
+        <div class="tr-actions">
+          <button class="tr-act-btn">Restore</button>
+          <button class="tr-act-btn danger">Delete</button>
+        </div>
+      </div>
+
+      <div class="tr-row" data-type="doc">
+        <button class="tr-check"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></button>
+        <span class="tr-ico"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></span>
+        <span class="tr-title">Team interview notes — Q1</span>
+        <span class="tr-deleted-by"><span class="av c">J</span><span class="name">jordan@example.com</span><span class="when">12d ago</span></span>
+        <span class="tr-expires">18 days left</span>
+        <div class="tr-actions">
+          <button class="tr-act-btn">Restore</button>
+          <button class="tr-act-btn danger">Delete</button>
+        </div>
+      </div>
+
+      <div class="tr-row" data-type="doc">
+        <button class="tr-check"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></button>
+        <span class="tr-ico"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></span>
+        <span class="tr-title">brand-architecture-v2.png</span>
+        <span class="tr-deleted-by"><span class="av a">A</span><span class="name">alex@example.com</span><span class="when">15d ago</span></span>
+        <span class="tr-expires">15 days left</span>
+        <div class="tr-actions">
+          <button class="tr-act-btn">Restore</button>
+          <button class="tr-act-btn danger">Delete</button>
+        </div>
+      </div>
+
+      <div class="tr-row" data-type="flow">
+        <button class="tr-check"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></button>
+        <span class="tr-ico flow"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="3" width="6" height="6" rx="1"/><rect x="3" y="15" width="6" height="6" rx="1"/><path d="M9 6h4a2 2 0 0 1 2 2v10M9 18h6"/></svg></span>
+        <span class="tr-title">Old triage flow (deprecated)</span>
+        <span class="tr-deleted-by"><span class="av b">S</span><span class="name">sam@example.com</span><span class="when">21d ago</span></span>
+        <span class="tr-expires">9 days left</span>
+        <div class="tr-actions">
+          <button class="tr-act-btn">Restore</button>
+          <button class="tr-act-btn danger">Delete</button>
+        </div>
+      </div>
+
+      <div class="tr-row" data-type="doc">
+        <button class="tr-check"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></button>
+        <span class="tr-ico"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></span>
+        <span class="tr-title">README.md (old)</span>
+        <span class="tr-deleted-by"><span class="av a">A</span><span class="name">alex@example.com</span><span class="when">26d ago</span></span>
+        <span class="tr-expires warn">4 days left</span>
+        <div class="tr-actions">
+          <button class="tr-act-btn">Restore</button>
+          <button class="tr-act-btn danger">Delete</button>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="tr-empty" id="tr-empty">
+      <div class="ic">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+      </div>
+      <h3>Trash is empty</h3>
+      <p>Deleted items appear here for 30 days before being permanently removed.</p>
+    </div>
+
+  </div>
+  </div>
+
+  <!-- BULK BAR -->
+  <div class="tr-bulkbar" id="tr-bulkbar">
+    <span class="count"><span class="n" id="tr-bulk-n">0</span><span id="tr-bulk-label">items selected</span></span>
+    <div class="bb-actions">
+      <button class="tr-btn tr-btn-secondary" id="tr-bulk-restore">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        Restore
+      </button>
+      <button class="tr-btn tr-btn-danger" id="tr-bulk-delete">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        Delete permanently
+      </button>
+    </div>
+    <button class="clear" id="tr-bulk-clear">Clear</button>
+  </div>
+
+  <!-- CONFIRM MODAL -->
+  <div class="tr-overlay" id="tr-overlay">
+    <div class="tr-confirm">
+      <div class="tr-confirm-head">
+        <span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span>
+        <h3>Empty trash permanently?</h3>
+      </div>
+      <div class="tr-confirm-body">
+        <p>All <strong>7 items</strong> in trash will be permanently deleted. This can't be undone — they won't be recoverable.</p>
+      </div>
+      <div class="tr-confirm-foot">
+        <button class="tr-btn tr-btn-ghost" id="tr-cancel">Cancel</button>
+        <button class="tr-btn tr-btn-danger" id="tr-confirm-empty">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          Empty trash
+        </button>
+      </div>
+    </div>
+  </div>
+
+</AppLayout>
+
+<script>
+// Filter chips
+document.getElementById('tr-chips')?.addEventListener('click', (e) => {
+  const b = (e.target as Element).closest('.tr-chip') as HTMLElement | null;
+  if (!b) return;
+  document.querySelectorAll('.tr-chip').forEach((c) => c.classList.toggle('active', c === b));
+  const type = b.dataset.type;
+  let visible = 0;
+  document.querySelectorAll('.tr-row').forEach((r: Element) => {
+    const row = r as HTMLElement;
+    const show = type === 'all' || row.dataset.type === type;
+    row.style.display = show ? 'grid' : 'none';
+    if (show) visible++;
+  });
+  const el = document.querySelector('#tr-visible-count');
+  if (el) el.textContent = String(visible);
+});
+
+// Row selection
+const bulk = document.getElementById('tr-bulkbar');
+const bulkN = document.getElementById('tr-bulk-n');
+const bulkLabel = document.getElementById('tr-bulk-label');
+function updateBulk() {
+  const sel = document.querySelectorAll('.tr-row.selected').length;
+  if (bulkN) bulkN.textContent = String(sel);
+  if (bulkLabel) bulkLabel.textContent = sel === 1 ? 'item selected' : 'items selected';
+  bulk?.classList.toggle('active', sel > 0);
+}
+document.querySelectorAll('.tr-check').forEach((c) => {
+  c.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const row = (c as Element).closest('.tr-row');
+    if (!row) return;
+    row.classList.toggle('selected');
+    c.classList.toggle('on', row.classList.contains('selected'));
+    updateBulk();
+  });
+});
+document.getElementById('tr-bulk-clear')?.addEventListener('click', () => {
+  document.querySelectorAll('.tr-row.selected').forEach((r) => {
+    r.classList.remove('selected');
+    r.querySelector('.tr-check')?.classList.remove('on');
+  });
+  updateBulk();
+});
+
+// Per-row restore/delete
+document.querySelectorAll('.tr-act-btn').forEach((b) => {
+  b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const row = (b as Element).closest('.tr-row') as HTMLElement | null;
+    if (!row) return;
+    row.style.opacity = '0';
+    setTimeout(() => row.remove(), 200);
+  });
+});
+
+// Empty trash modal
+const overlay = document.getElementById('tr-overlay');
+document.getElementById('tr-empty-btn')?.addEventListener('click', () => overlay?.classList.add('active'));
+document.getElementById('tr-cancel')?.addEventListener('click', () => overlay?.classList.remove('active'));
+overlay?.addEventListener('click', (e) => { if (e.target === overlay) overlay.classList.remove('active'); });
+document.getElementById('tr-confirm-empty')?.addEventListener('click', () => {
+  document.querySelectorAll('.tr-row').forEach((r) => r.remove());
+  document.getElementById('tr-list')?.classList.add('hidden');
+  document.getElementById('tr-meta-line')?.classList.add('hidden');
+  const chips = document.getElementById('tr-chips') as HTMLElement | null;
+  if (chips) chips.style.display = 'none';
+  document.getElementById('tr-empty')?.classList.add('active');
+  overlay?.classList.remove('active');
+});
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && overlay?.classList.contains('active')) overlay.classList.remove('active');
+});
+</script>

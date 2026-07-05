@@ -1,0 +1,233 @@
+---
+import AppLayout from '../../../layouts/AppLayout.astro';
+
+const auth = Astro.locals.auth;
+if (!auth) {
+  return Astro.redirect('/auth/login');
+}
+
+const domainPart = auth.email.split('@')[1]?.split('.')[0] ?? '';
+const workspaceName = domainPart
+  ? domainPart.charAt(0).toUpperCase() + domainPart.slice(1)
+  : 'Workspace';
+---
+
+<style>
+  .dr-main { overflow-y: auto; }
+  .dr-wrap { max-width: 880px; margin: 0 auto; padding: 40px 32px 80px; }
+
+  .dr-pre {
+    font: 500 11px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--ink-muted); margin-bottom: 14px;
+  }
+  .dr-h1 {
+    display: flex; align-items: center; gap: 14px;
+    margin: 0; font: 500 28px/1.15 var(--sans); letter-spacing: -0.02em; color: var(--ink);
+  }
+  .dr-logo {
+    width: 36px; height: 36px; border-radius: 9px;
+    background: white; padding: 7px;
+    display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .dr-sub { margin: 12px 0 0; font-size: 15px; line-height: 1.6; color: var(--ink-soft); max-width: 36rem; }
+
+  /* PLACEHOLDER CARD */
+  .dr-placeholder {
+    margin-top: 32px;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 56px 32px; text-align: center;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+  }
+  .dr-placeholder .dr-ico {
+    width: 48px; height: 48px; border-radius: 12px;
+    background: var(--surface-2); border: 1px solid var(--line);
+    color: var(--ink-soft);
+    display: inline-flex; align-items: center; justify-content: center;
+    margin-bottom: 18px;
+  }
+  .dr-placeholder h2 { margin: 0 0 8px; font: 500 16px/1.3 var(--sans); letter-spacing: -0.005em; color: var(--ink); }
+  .dr-placeholder p { margin: 0 auto 18px; font-size: 13px; color: var(--ink-soft); line-height: 1.55; max-width: 30rem; }
+  .dr-coming {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 5px 11px 5px 9px; border-radius: 999px;
+    background: var(--surface-2); border: 1px solid var(--line);
+    font: 500 10.5px/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-soft);
+  }
+  .dr-coming .sig {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--status-info);
+    box-shadow: 0 0 6px rgba(124,156,255,0.6);
+    animation: dr-sigpulse 2.4s ease-in-out infinite;
+  }
+  @keyframes dr-sigpulse {
+    0%,100% { box-shadow: 0 0 0 0 rgba(124,156,255,0.6); }
+    50% { box-shadow: 0 0 0 5px rgba(124,156,255,0); }
+  }
+
+  /* NOTIFY BLOCK */
+  .dr-notify {
+    margin-top: 20px; padding: 14px 16px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 9px;
+    display: flex; align-items: center; gap: 14px;
+  }
+  .dr-notify-body { flex: 1; min-width: 0; }
+  .dr-notify-title { font: 500 13px/1.3 var(--sans); color: var(--ink); }
+  .dr-notify-sub { font: 400 12px/1.4 var(--sans); color: var(--ink-muted); margin-top: 2px; }
+  .dr-notify-form { display: flex; gap: 6px; flex-shrink: 0; }
+  .dr-notify-form input {
+    width: 220px; padding: 8px 11px;
+    background: var(--canvas); border: 1px solid var(--line-strong);
+    border-radius: 6px; color: var(--ink); outline: none;
+    font: 400 12.5px/1 var(--sans);
+  }
+  .dr-notify-form input:focus { border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .dr-notify-form input::placeholder { color: var(--ink-muted); }
+  .dr-notify-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 14px; border-radius: 6px; cursor: pointer; border: 1px solid transparent;
+    background: var(--ink); color: var(--on-ink); font: 500 12.5px/1 var(--sans); white-space: nowrap;
+  }
+  .dr-notify-btn:hover { opacity: 0.88; }
+  .dr-notify-btn.success { background: rgba(107,227,155,0.14); color: var(--status-sync); border-color: rgba(107,227,155,0.32); }
+
+  /* OTHER WAYS */
+  .dr-other { margin-top: 40px; }
+  .dr-sec-label {
+    display: flex; align-items: center; gap: 12px;
+    font: 500 11px/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-muted);
+    margin-bottom: 14px;
+  }
+  .dr-sec-label::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+  .dr-sec-label .accent { color: var(--ink-soft); }
+  .dr-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .dr-opt {
+    display: flex; flex-direction: column; padding: 16px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 9px;
+    cursor: pointer; text-decoration: none; color: inherit;
+    transition: background 140ms ease, border-color 140ms ease;
+  }
+  .dr-opt:hover { background: var(--surface-2); border-color: var(--line-strong); }
+  .dr-opt:hover .dr-opt-lnk { color: var(--accent); }
+  .dr-opt:hover .dr-opt-arrow { transform: translateX(2px); color: var(--accent); }
+  .dr-opt-icon {
+    width: 30px; height: 30px; border-radius: 7px;
+    background: var(--surface-2); border: 1px solid var(--line);
+    color: var(--ink-soft);
+    display: inline-flex; align-items: center; justify-content: center; margin-bottom: 12px;
+  }
+  .dr-opt h4 { margin: 0 0 5px; font: 500 14px/1.3 var(--sans); color: var(--ink); letter-spacing: -0.005em; }
+  .dr-opt p { margin: 0 0 12px; font: 400 12.5px/1.5 var(--sans); color: var(--ink-soft); flex: 1; }
+  .dr-opt-lnk { display: inline-flex; align-items: center; gap: 4px; font: 500 11.5px/1 var(--sans); color: var(--ink-soft); }
+  .dr-opt-arrow { color: var(--ink-muted); transition: transform 160ms ease, color 160ms ease; }
+  .dr-code { font: 500 11px var(--mono); padding: 1px 4px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 3px; }
+</style>
+
+<AppLayout title="Google Drive — Mnema" workspaceName={workspaceName} email={auth.email}>
+
+  <!-- STATUS LEFT -->
+  <Fragment slot="status-left">
+    <span style="font:500 11px/1 var(--mono);color:var(--ink-muted);">Google Drive · planned · Phase 10</span>
+  </Fragment>
+
+  <!-- MAIN CONTENT -->
+  <div class="dr-main">
+    <div class="dr-wrap">
+
+      <div class="dr-pre">Connections</div>
+      <h1 class="dr-h1">
+        <span class="dr-logo">
+          <svg width="22" height="22" viewBox="0 0 24 24">
+            <polygon points="8,3 2,14 6,21 12,12" fill="#0F9D58"/>
+            <polygon points="16,3 8,3 12,12 20,12" fill="#FFCD40"/>
+            <polygon points="22,14 16,3 12,12 18,21" fill="#4285F4"/>
+          </svg>
+        </span>
+        Google Drive
+      </h1>
+      <p class="dr-sub">Sync content from Google Drive as Mnema docs. Files appear in your workspace as if they were native.</p>
+
+      <!-- PLACEHOLDER CARD -->
+      <div class="dr-placeholder">
+        <div class="dr-ico">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="12" x2="2" y2="12"/>
+            <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>
+            <line x1="6" y1="16" x2="6.01" y2="16"/>
+            <line x1="10" y1="16" x2="10.01" y2="16"/>
+          </svg>
+        </div>
+        <h2>Google Drive sync — coming soon</h2>
+        <p>Once available, you'll connect your Drive account here and choose which folders Mnema should mirror as content. Until then, drag content into the workspace as markdown docs.</p>
+        <span class="dr-coming"><span class="sig"></span>Drive sync · planned for Phase 10</span>
+      </div>
+
+      <!-- NOTIFY BLOCK -->
+      <div class="dr-notify">
+        <div class="dr-notify-body">
+          <div class="dr-notify-title">Notify me when it's ready</div>
+          <div class="dr-notify-sub">We'll email you once Drive sync ships in Phase 10. No other messages.</div>
+        </div>
+        <form class="dr-notify-form" onsubmit="return false;">
+          <input type="email" id="dr-notify-email" placeholder="you@workplace.com" value={auth.email} />
+          <button class="dr-notify-btn" type="button" id="dr-notify-btn">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22 6 12 13 2 6"/></svg>
+            <span id="dr-notify-label">Notify me</span>
+          </button>
+        </form>
+      </div>
+
+      <!-- OTHER WAYS -->
+      <div class="dr-other">
+        <div class="dr-sec-label">Other ways to bring content in <span class="accent">— available today</span></div>
+        <div class="dr-options">
+
+          <a class="dr-opt" href="/app/content">
+            <span class="dr-opt-icon">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>
+            </span>
+            <h4>Paste markdown</h4>
+            <p>Open a new doc and paste any markdown. Formatting, links, and code blocks survive intact.</p>
+            <span class="dr-opt-lnk">How it works <svg class="dr-opt-arrow" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg></span>
+          </a>
+
+          <a class="dr-opt" href="/app/content">
+            <span class="dr-opt-icon">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            </span>
+            <h4>Upload .md files</h4>
+            <p>Drop one or many <code class="dr-code">.md</code> files anywhere in your workspace. Folder structure is preserved.</p>
+            <span class="dr-opt-lnk">Upload guide <svg class="dr-opt-arrow" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg></span>
+          </a>
+
+          <a class="dr-opt" href="/app/content">
+            <span class="dr-opt-icon">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            </span>
+            <h4>Copy from clipboard</h4>
+            <p>Press <code class="dr-code">⌘V</code> with rich content on your clipboard. Mnema converts to markdown.</p>
+            <span class="dr-opt-lnk">Clipboard tips <svg class="dr-opt-arrow" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg></span>
+          </a>
+
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    const btn = document.getElementById('dr-notify-btn');
+    const label = document.getElementById('dr-notify-label');
+    const input = document.getElementById('dr-notify-email') as HTMLInputElement | null;
+    btn?.addEventListener('click', () => {
+      const ok = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input?.value.trim() ?? '');
+      if (!ok) { input?.focus(); return; }
+      btn.classList.add('success');
+      if (label) label.textContent = "You're on the list ✓";
+      setTimeout(() => {
+        btn.classList.remove('success');
+        if (label) label.textContent = 'Notify me';
+      }, 2400);
+    });
+  </script>
+
+</AppLayout>

@@ -1,0 +1,16 @@
+/* Flow canvas — handle hover/connecting states & edge animation */
+
+.react-flow__handle:hover {
+  border-color: rgba(255,255,255,0.50) !important;
+  background: #27272a !important;
+}
+.react-flow__handle.connecting,
+.react-flow__handle.valid {
+  border-color: #fbbf24 !important;
+  background: rgba(251,191,36,0.15) !important;
+}
+
+@keyframes flowDash {
+  from { stroke-dashoffset: 22; }
+  to   { stroke-dashoffset: 0; }
+}

@@ -1,0 +1,14 @@
+---
+// DESIGN APPLIED: 2026-05-27
+import AppLayout from '../../layouts/AppLayout.astro';
+import { SessionsList } from '../../components/dev/SessionsList';
+
+const auth = Astro.locals.auth;
+if (!auth) {
+  return Astro.redirect('/auth/login');
+}
+---
+
+<AppLayout title="Sessions">
+  <SessionsList workspaceId={auth.tenant_id} client:load />
+</AppLayout>

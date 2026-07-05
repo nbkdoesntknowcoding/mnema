@@ -1,0 +1,329 @@
+---
+import BaseLayout from './BaseLayout.astro';
+import { Sidebar } from '../components/app/Sidebar';
+import { NotificationBell } from '../components/app/NotificationBell';
+import { WorkspaceSwitcher } from '../components/nav/WorkspaceSwitcher';
+import { DevSearch } from '../components/dev/DevSearch';
+import { CommandPalette } from '../components/nav/CommandPalette';
+import { WorkspaceModeToggle } from '../components/app/WorkspaceModeToggle';
+import { DocPreviewHost } from '../components/preview/DocPreviewHost';
+
+interface Props {
+  title: string;
+  workspaceName?: string;
+  email?: string;
+  hasToolbar?: boolean;
+}
+
+const { title, workspaceName = 'Workspace', email, hasToolbar = false } = Astro.props;
+const pathname = Astro.url.pathname + Astro.url.search;
+const auth = Astro.locals.auth;
+const userInitial = (email?.[0] ?? auth?.email?.[0] ?? 'U').toUpperCase();
+const isAdmin = false; // admin is an enterprise feature
+
+const apiUrl =
+  (import.meta.env.PUBLIC_API_URL as string | undefined) ?? 'http://localhost:8080';
+let typeCounts: Record<string, number> = {};
+let workspaceMode: string | undefined = undefined;
+if (auth) {
+  try {
+    const [countsRes, devRes] = await Promise.allSettled([
+      fetch(`${apiUrl}/api/content/type-counts`, {
+        headers: { Cookie: `boppl_jwt=${auth.jwt}` },
+      }),
+      fetch(`${apiUrl}/api/workspaces/${auth.tenant_id}/dev-config`, {
+        headers: { Cookie: `boppl_jwt=${auth.jwt}` },
+      }),
+    ]);
+    if (countsRes.status === 'fulfilled' && countsRes.value.ok) {
+      const body = (await countsRes.value.json()) as { counts: Record<string, number> };
+      typeCounts = body.counts ?? {};
+    }
+    if (devRes.status === 'fulfilled' && devRes.value.ok) {
+      const body = (await devRes.value.json()) as { mode: string };
+      workspaceMode = body.mode;
+    }
+  } catch {
+    /* API offline */
+  }
+}
+---
+
+<BaseLayout title={title}>
+  <style is:global>
+    :root {
+      --topbar-h: 44px;
+      --toolbar-h: 44px;
+      --status-h: 26px;
+      --sidebar-w: 220px;
+    }
+
+    /* Lock the document to the viewport so only the main content area scrolls —
+       the topbar (header), sidebar (navbar) and status bar (footer) stay pinned. */
+    html, body {
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+    }
+
+    .app-shell {
+      display: grid;
+      grid-template-columns: var(--sidebar-w) 1fr;
+      grid-template-rows: var(--topbar-h) 1fr var(--status-h);
+      grid-template-areas:
+        "ap-topbar ap-topbar"
+        "ap-sidebar ap-main"
+        "ap-status ap-status";
+      height: 100vh;
+      height: 100dvh;
+      overflow: hidden;
+    }
+    .app-shell.has-toolbar {
+      grid-template-rows: var(--topbar-h) var(--toolbar-h) 1fr var(--status-h);
+      grid-template-areas:
+        "ap-topbar ap-topbar"
+        "ap-sidebar ap-toolbar"
+        "ap-sidebar ap-main"
+        "ap-status ap-status";
+    }
+
+    /* TOPBAR */
+    .ap-topbar {
+      grid-area: ap-topbar;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 12px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--line);
+    }
+    .ap-tb-left { display: flex; align-items: center; gap: 10px; }
+    .ap-brand {
+      display: inline-flex; align-items: center; gap: 8px;
+      font: 600 14px/1 var(--sans); color: var(--ink); text-decoration: none;
+    }
+    .ap-glyph {
+      width: 22px; height: 22px; border-radius: 6px;
+      overflow: hidden; display: inline-flex; flex-shrink: 0;
+    }
+    .ap-tb-div { width: 1px; height: 16px; background: var(--line-strong); flex-shrink: 0; }
+    .ap-ws-btn {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 4px 6px 4px 5px; border-radius: 6px;
+      background: transparent; border: 1px solid transparent;
+      cursor: pointer; color: var(--ink); font: 500 13px/1 var(--sans);
+    }
+    .ap-ws-btn:hover { background: var(--surface-2); border-color: var(--line); }
+    .ap-ws-av {
+      width: 16px; height: 16px; border-radius: 4px;
+      background: linear-gradient(135deg, #7C9CFF, #C8A2FF);
+      color: white; font: 700 9.5px/1 var(--sans);
+      display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .ap-ws-chev { color: var(--ink-muted); }
+    .ap-search {
+      flex: 0 1 420px; min-width: 180px; position: relative;
+    }
+    .ap-search svg {
+      position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+      width: 12px; height: 12px; color: var(--ink-muted); pointer-events: none;
+    }
+    .ap-search input {
+      width: 100%; padding: 6px 52px 6px 30px; border-radius: 6px;
+      background: var(--surface-2); color: var(--ink);
+      border: 1px solid transparent; outline: none;
+      font: 400 13px/1 var(--sans);
+    }
+    .ap-search input:focus { border-color: var(--accent-line); background: var(--surface); }
+    .ap-search input::placeholder { color: var(--ink-muted); }
+    .ap-kbd {
+      position: absolute; right: 7px; top: 50%; transform: translateY(-50%);
+      display: inline-flex; gap: 2px;
+    }
+    .ap-kbd kbd {
+      font: 500 10px/1 var(--sans); padding: 2px 5px; border-radius: 3px;
+      background: var(--surface); border: 1px solid var(--line); color: var(--ink-muted);
+    }
+    .ap-tb-right { display: flex; align-items: center; gap: 3px; }
+    .ap-icon-btn {
+      width: 26px; height: 26px; border-radius: 5px;
+      background: transparent; border: 0; color: var(--ink-muted); cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center;
+      text-decoration: none; position: relative;
+    }
+    .ap-icon-btn:hover { background: var(--surface-2); color: var(--ink); }
+    .ap-user-chip {
+      width: 24px; height: 24px; border-radius: 50%;
+      background: linear-gradient(135deg, rgba(var(--accent-rgb),0.95), rgba(255,122,138,0.95));
+      color: var(--on-ink); font: 700 10.5px/1 var(--sans);
+      display: inline-flex; align-items: center; justify-content: center;
+      cursor: pointer; margin-left: 4px; text-decoration: none;
+    }
+
+    /* SIDEBAR */
+    .ap-sidebar {
+      grid-area: ap-sidebar;
+      background: var(--surface);
+      border-right: 1px solid var(--line);
+      overflow-y: auto;
+      min-height: 0;
+      display: flex; flex-direction: column;
+    }
+
+    /* TOOLBAR */
+    .ap-toolbar {
+      grid-area: ap-toolbar;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 16px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--line);
+    }
+
+    /* MAIN */
+    .ap-main {
+      grid-area: ap-main;
+      overflow-y: auto;
+      /* min-height/width:0 lets this 1fr grid cell shrink to the available space
+         and scroll its content internally instead of expanding the whole shell. */
+      min-height: 0;
+      min-width: 0;
+      background: var(--canvas);
+    }
+
+    /* STATUS BAR */
+    .ap-statusbar {
+      grid-area: ap-status;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 14px;
+      background: var(--surface);
+      border-top: 1px solid var(--line);
+      font: 500 11.5px/1 var(--mono);
+      letter-spacing: 0.02em; color: var(--ink-muted);
+    }
+    .ap-sb-left, .ap-sb-right { display: flex; align-items: center; gap: 14px; }
+    .ap-sb-item { display: flex; align-items: center; gap: 6px; }
+    .ap-sb-sep { width: 1px; height: 12px; background: var(--line); }
+    .ap-sb-sig {
+      width: 6px; height: 6px; border-radius: 50%; background: #6BE39B;
+      box-shadow: 0 0 5px rgba(107,227,155,0.5);
+      animation: ap-pulse 2s ease-in-out infinite;
+    }
+    @keyframes ap-pulse {
+      0%,100% { box-shadow: 0 0 0 0 rgba(107,227,155,0.55); }
+      50% { box-shadow: 0 0 0 4px rgba(107,227,155,0); }
+    }
+    .ap-sb-v { color: var(--ink); }
+
+    /* Sidebar React component reset — override its own layout assumptions */
+    .ap-sidebar > aside { width: 100% !important; height: 100% !important; }
+  </style>
+
+
+  <div class={`app-shell${hasToolbar ? ' has-toolbar' : ''}`}>
+
+    <!-- TOPBAR -->
+    <header class="ap-topbar">
+      <div class="ap-tb-left">
+        <a href="/app/content" class="ap-brand">
+          <span class="ap-glyph"><img src="/logo.svg" width="22" height="22" alt="Mnema" draggable="false"></span>
+          <span>Mnema</span>
+        </a>
+        <span class="ap-tb-div"></span>
+        <WorkspaceSwitcher
+          currentWorkspaceId={auth?.tenant_id ?? ''}
+          client:load
+        />
+      </div>
+
+      <div class="ap-search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>
+        </svg>
+        <input id="ap-global-search" placeholder="Search docs, flows, connections…" readonly />
+        <span class="ap-kbd"><kbd>⌘</kbd><kbd>K</kbd></span>
+      </div>
+
+      <div class="ap-tb-right">
+        {auth && (
+          <WorkspaceModeToggle
+            initialMode={workspaceMode ?? 'knowledge'}
+            workspaceId={auth.tenant_id}
+            client:load
+          />
+        )}
+        <NotificationBell client:load />
+        <button class="ap-icon-btn" title="Invite members">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>
+        </button>
+        <a href="/app/settings" class="ap-icon-btn" title="Settings">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </a>
+        <a href="/auth/logout" class="ap-user-chip" title="Account">{userInitial}</a>
+      </div>
+    </header>
+
+    <!-- SIDEBAR -->
+    <aside class="ap-sidebar">
+      <Sidebar
+        workspaceName={workspaceName}
+        currentPath={pathname}
+        workspaceMode={workspaceMode}
+        typeCounts={typeCounts}
+        isAdmin={isAdmin}
+        client:load
+      />
+    </aside>
+
+    <!-- TOOLBAR (shown only when hasToolbar=true) -->
+    {hasToolbar && (
+      <div class="ap-toolbar">
+        <slot name="toolbar" />
+      </div>
+    )}
+
+    <!-- MAIN CONTENT -->
+    <main class="ap-main">
+      <slot />
+    </main>
+
+    <!-- DEV SEARCH overlay (dev_project workspaces only, opens on '/' keypress) -->
+    {workspaceMode === 'dev_project' && (
+      <DevSearch workspaceMode={workspaceMode} client:load />
+    )}
+
+    <!-- COMMAND PALETTE / GLOBAL SEARCH (⌘K, or the top-bar search box) -->
+    <CommandPalette client:load />
+    <script is:inline>
+      (function () {
+        var box = document.getElementById('ap-global-search');
+        if (!box) return;
+        var open = function (e) { e.preventDefault(); box.blur(); window.dispatchEvent(new Event('mnema:open-palette')); };
+        box.addEventListener('focus', open);
+        box.addEventListener('mousedown', open);
+      })();
+    </script>
+
+    <!-- GLOBAL FLOATING DOC PREVIEW (portal-mounted; available app-wide) -->
+    <DocPreviewHost client:load />
+
+    <!-- STATUS BAR -->
+    <footer class="ap-statusbar">
+      <div class="ap-sb-left">
+        <span class="ap-sb-item">
+          <span class="ap-sb-sig"></span>
+          MCP live
+        </span>
+        <span class="ap-sb-sep"></span>
+        <slot name="status-left" />
+      </div>
+      <div class="ap-sb-right">
+        <slot name="status-right" />
+        {email && (
+          <>
+            <span class="ap-sb-sep"></span>
+            <span class="ap-sb-item" style="color:var(--ink-soft);">{email}</span>
+          </>
+        )}
+      </div>
+    </footer>
+
+  </div>
+</BaseLayout>

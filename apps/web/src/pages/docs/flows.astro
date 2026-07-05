@@ -1,0 +1,125 @@
+---
+import PublicLayout from '../../layouts/PublicLayout.astro';
+---
+
+<PublicLayout
+  title="Flows — Mnema docs"
+  description="What a flow is, how Claude calls one, and when to use a flow instead of a single doc."
+  pathname="/docs/flows"
+>
+  <article class="max-w-[680px] mx-auto px-6 pt-[80px] pb-[96px]">
+    <a
+      href="/docs"
+      class="transition-colors inline-block mb-8"
+      style="font-size: 12px; color: var(--text-tertiary);"
+      onmouseover="this.style.color='var(--text-primary)'"
+      onmouseout="this.style.color='var(--text-tertiary)'"
+    >
+      ← All docs
+    </a>
+
+    <span
+      class="block mb-3 font-mono uppercase"
+      style="font-size: 11px; letter-spacing: 0.08em; color: var(--text-tertiary);"
+    >
+      Flows
+    </span>
+    <h1
+      style="font-size: 28px; line-height: 1.3; letter-spacing: -0.01em; font-weight: 500; color: var(--text-primary);"
+    >
+      Flows
+    </h1>
+    <p
+      class="mt-3 mb-12"
+      style="font-size: 15px; color: var(--text-secondary);"
+    >
+      Flows are how Mnema turns a workspace of docs into structured context for an AI agent.
+      Here's what they are, how Claude calls them, and when to reach for one.
+    </p>
+
+    <ol class="space-y-8 list-none">
+      {[
+        {
+          heading: 'What a flow is',
+          body: (
+            <span>
+              A flow is a named sequence of content steps. Each step has an instruction and
+              references one or more docs in your workspace. Flows are the unit of context
+              that you deliver to Claude — not raw docs, not entire workspaces, but specific
+              ordered sequences with your authorial intent baked in.
+            </span>
+          ),
+        },
+        {
+          heading: 'How Claude calls a flow',
+          body: (
+            <span>
+              Claude (or any MCP client) discovers your flows by calling{' '}
+              <code style="font-family: var(--font-mono); font-size: 12px; background: var(--surface-sunken); border-radius: var(--radius-sm); padding: 2px 6px; color: var(--text-primary);">list_flows</code>.
+              It then walks the flow by calling{' '}
+              <code style="font-family: var(--font-mono); font-size: 12px; background: var(--surface-sunken); border-radius: var(--radius-sm); padding: 2px 6px; color: var(--text-primary);">get_flow_step(flow_id, step_number)</code>
+              {' '}for each step in order. Each call returns one step's instruction plus the rendered content. The
+              sequence is explicit — Claude doesn't decide order, you do.
+            </span>
+          ),
+        },
+        {
+          heading: 'When to use a flow vs. a single doc',
+          body: (
+            <span>
+              Single docs are good when Claude needs a fact or a specific piece of content.
+              Flows are good when Claude needs to be walked through something — a codebase
+              onboarding, a workflow, a structured analysis. If you'd brief a teammate over
+              five minutes with "first read this, then this, then this" — that's a flow.
+            </span>
+          ),
+        },
+        {
+          heading: 'The flow editor (coming next release)',
+          body: (
+            <span>
+              The visual flow editor is in active development. Drag docs into a sequence,
+              annotate each step with an instruction, save the flow. It's exposed to Claude
+              automatically through MCP — no extra wiring needed.
+            </span>
+          ),
+        },
+      ].map((step, i) => (
+        <li class="flex gap-4">
+          <div
+            class="flex-shrink-0 flex items-center justify-center font-mono font-medium"
+            style="width: 28px; height: 28px; border-radius: 50%; background: var(--surface-elevated); border: 1px solid var(--border-default); font-size: 13px; color: var(--text-primary);"
+          >
+            {i + 1}
+          </div>
+          <div class="pt-0.5">
+            <h2 style="font-size: 16px; font-weight: 500; color: var(--text-primary); line-height: 1.5; margin-bottom: 4px;">
+              {step.heading}
+            </h2>
+            <p style="font-size: 14px; color: var(--text-secondary); line-height: 1.65;">
+              {step.body}
+            </p>
+          </div>
+        </li>
+      ))}
+    </ol>
+
+    <div
+      class="mt-16 p-6"
+      style="background: var(--surface-overlay); border: 1px solid var(--border-default); border-radius: var(--radius-lg);"
+    >
+      <h3 style="font-size: 14px; font-weight: 500; color: var(--text-primary); margin-bottom: 8px;">
+        Today vs. next release
+      </h3>
+      <p style="font-size: 14px; color: var(--text-secondary); line-height: 1.65;">
+        The MCP server already advertises{' '}
+        <code style="font-family: var(--font-mono); font-size: 12px; background: var(--surface-sunken); border-radius: var(--radius-sm); padding: 2px 6px; color: var(--text-primary);">list_flows</code>{' '}
+        and{' '}
+        <code style="font-family: var(--font-mono); font-size: 12px; background: var(--surface-sunken); border-radius: var(--radius-sm); padding: 2px 6px; color: var(--text-primary);">get_flow_step</code>{' '}
+        as tools. They currently return an empty preview response — the flow editor fills
+        them in. The contract is stable now so Claude conversations referencing flows will
+        keep working when the editor ships.
+      </p>
+    </div>
+  </article>
+</PublicLayout>

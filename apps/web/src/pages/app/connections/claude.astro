@@ -1,0 +1,731 @@
+---
+import AppLayout from '../../../layouts/AppLayout.astro';
+
+const auth = Astro.locals.auth;
+if (!auth) {
+  return Astro.redirect('/auth/login');
+}
+
+const apiUrl =
+  (import.meta.env.PUBLIC_API_URL as string | undefined) ?? 'http://localhost:8080';
+// PUBLIC_MCP_URL overrides the base for the MCP config snippet shown to the
+// user (e.g. a Cloudflare Tunnel URL) without routing ALL API calls through
+// the tunnel. Falls back to apiUrl so local-only setups still work.
+const mcpBaseUrl =
+  (import.meta.env.PUBLIC_MCP_URL as string | undefined) ?? apiUrl;
+const mcpEndpoint = `${mcpBaseUrl}/mcp`;
+
+const domainPart = auth.email?.split('@')[1]?.split('.')[0] ?? '';
+const workspaceName = domainPart
+  ? domainPart.charAt(0).toUpperCase() + domainPart.slice(1)
+  : 'Workspace';
+
+// Check existing tokens server-side to set initial status
+type TokenRow = { id: string; name: string; scopes: string[]; expires_at: string | null; last_used_at: string | null; created_at: string };
+let tokens: TokenRow[] = [];
+try {
+  const res = await fetch(`${apiUrl}/api/mcp-tokens`, {
+    headers: { Cookie: `boppl_jwt=${auth.jwt}` },
+  });
+  if (res.ok) {
+    const body = (await res.json()) as { tokens: TokenRow[] };
+    tokens = body.tokens ?? [];
+  }
+} catch { /* API offline */ }
+
+// Fetch the caller's role + workspace mode so we know which scopes/tools apply.
+const WRITE_ROLES = new Set(['owner', 'admin', 'editor']);
+let userRole = 'viewer';
+let workspaceMode = 'knowledge';
+try {
+  const meRes = await fetch(`${apiUrl}/api/auth/me`, {
+    headers: { Cookie: `boppl_jwt=${auth.jwt}` },
+  });
+  if (meRes.ok) {
+    const meBody = (await meRes.json()) as { role?: string; workspace?: { mode?: string } };
+    if (meBody.role) userRole = meBody.role;
+    if (meBody.workspace?.mode) workspaceMode = meBody.workspace.mode;
+  }
+} catch { /* API offline */ }
+const canWrite = WRITE_ROLES.has(userRole);
+const isDevWorkspace = workspaceMode === 'dev_project';
+
+const hasToken = tokens.length > 0;
+// "Live" = a token has been used by Claude in the last 2 hours
+const LIVE_WINDOW_MS = 2 * 60 * 60 * 1000;
+const liveConnection = tokens.some(t =>
+  t.last_used_at && (Date.now() - new Date(t.last_used_at).getTime()) < LIVE_WINDOW_MS
+);
+// Status string
+const statusLabel = liveConnection ? 'Active' : hasToken ? 'Token issued — not connected' : 'Not connected';
+const isLocalhost = mcpBaseUrl.includes('localhost') || mcpBaseUrl.includes('127.0.0.1');
+---
+
+<style>
+  .cc-main { overflow-y: auto; }
+  .cc-wrap { max-width: 880px; margin: 0 auto; padding: 40px 32px 80px; }
+
+  .cc-pre {
+    font: 500 11px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--ink-muted); margin-bottom: 14px;
+  }
+  .cc-h1 {
+    display: flex; align-items: center; gap: 12px;
+    margin: 0 0 12px; font: 500 32px/1 var(--sans); letter-spacing: -0.02em; color: var(--ink);
+  }
+  .cc-logo {
+    width: 36px; height: 36px; border-radius: 8px;
+    background: linear-gradient(135deg, #FFB370, #FF7A8A);
+    color: white; font: 700 20px/1 var(--sans);
+    display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .cc-sub { margin: 0 0 32px; font-size: 15px; line-height: 1.6; color: var(--ink-soft); max-width: 36rem; }
+
+  .cc-section { margin-bottom: 32px; }
+  .cc-sec-label {
+    font: 500 10.5px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--ink-muted); margin-bottom: 12px;
+  }
+  .cc-sec-h { margin: 0 0 12px; font: 500 15px/1.3 var(--sans); letter-spacing: -0.005em; color: var(--ink); }
+
+  /* STATUS CARD */
+  .cc-status-card {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 20px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  }
+  .cc-status-lhs { display: flex; flex-direction: column; gap: 12px; }
+  .cc-status-row { display: flex; align-items: center; gap: 10px; }
+  .cc-status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .cc-status-dot.active {
+    background: var(--status-sync);
+    animation: cc-pulse 2s ease-in-out infinite;
+  }
+  .cc-status-dot.inactive {
+    background: var(--ink-muted);
+  }
+  .cc-status-dot.pending {
+    background: #F5A623;
+  }
+
+  /* LOCALHOST WARNING */
+  .cc-warn-box {
+    display: flex; gap: 12px; align-items: flex-start;
+    padding: 14px 16px; margin-bottom: 28px;
+    background: rgba(245,166,35,0.07); border: 1px solid rgba(245,166,35,0.30);
+    border-radius: 8px;
+  }
+  .cc-warn-icon { color: #F5A623; flex-shrink: 0; margin-top: 1px; }
+  .cc-warn-body { font: 400 13px/1.6 var(--sans); color: var(--ink-soft); }
+  .cc-warn-body strong { color: var(--ink); font-weight: 500; }
+  .cc-warn-body code { font-family: var(--mono); font-size: 11.5px; padding: 1px 5px; background: var(--surface-3); border-radius: 4px; color: var(--ink); }
+  @keyframes cc-pulse {
+    0%,100% { box-shadow: 0 0 0 0 rgba(107,227,155,0.55); }
+    50% { box-shadow: 0 0 0 4px rgba(107,227,155,0); }
+  }
+  .cc-status-label { font: 500 10.5px/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-muted); }
+  .cc-status-state { font: 500 13px/1 var(--sans); color: var(--ink); }
+  .cc-status-meta { display: flex; gap: 24px; }
+  .cc-status-item { display: flex; flex-direction: column; gap: 3px; }
+  .cc-status-k { font: 500 9.5px/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-muted); }
+  .cc-status-v { font: 400 13px/1 var(--sans); color: var(--ink); }
+
+  /* ENDPOINT BLOCK */
+  .cc-endpoint-block {
+    display: flex; align-items: stretch;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+  }
+  .cc-url {
+    flex: 1; padding: 10px 14px;
+    font: 400 13px/1 var(--mono); color: var(--ink-soft);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .cc-copy {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 10px 14px; border: 0; border-left: 1px solid var(--line);
+    background: var(--surface-2); color: var(--ink-muted);
+    font: 500 11px/1 var(--mono); letter-spacing: 0.04em; cursor: pointer;
+    transition: background 140ms ease, color 140ms ease; white-space: nowrap; flex-shrink: 0;
+  }
+  .cc-copy:hover { background: var(--surface-3); color: var(--ink); }
+  .cc-copy.copied { color: var(--status-sync); }
+  .cc-endpoint-help { margin: 8px 0 0; font-size: 12.5px; color: var(--ink-muted); }
+
+  /* TOKEN DISPLAY */
+  .cc-token-box {
+    margin-top: 12px; padding: 14px 16px;
+    background: rgba(107,227,155,0.06); border: 1px solid rgba(107,227,155,0.24);
+    border-radius: 8px; display: none; flex-direction: column; gap: 10px;
+  }
+  .cc-token-box.visible { display: flex; }
+  .cc-token-label { font: 500 10px/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--status-sync); }
+  .cc-token-value {
+    font: 400 11.5px/1.5 var(--mono); color: var(--ink); word-break: break-all;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 6px;
+    padding: 10px 12px; white-space: pre-wrap;
+    max-height: 100px; overflow-y: auto;
+  }
+  .cc-token-warn { font: 400 12px/1.5 var(--sans); color: var(--ink-muted); }
+  .cc-token-warn strong { color: var(--status-warn); font-weight: 500; }
+
+  /* STEPS */
+  .cc-steps { display: flex; flex-direction: column; }
+  .cc-step {
+    display: flex; align-items: flex-start; gap: 14px;
+    padding: 14px 0; border-bottom: 1px solid var(--line);
+  }
+  .cc-step:last-child { border-bottom: 0; }
+  .cc-step-num {
+    width: 24px; height: 24px; border-radius: 6px; flex-shrink: 0;
+    background: var(--surface-2); border: 1px solid var(--line);
+    display: inline-flex; align-items: center; justify-content: center;
+    font: 500 11px/1 var(--mono); color: var(--ink-muted);
+  }
+  .cc-step.done .cc-step-num { background: rgba(107,227,155,0.12); border-color: rgba(107,227,155,0.28); color: var(--status-sync); }
+  .cc-step-body { flex: 1; padding-top: 3px; font: 400 13.5px/1.6 var(--sans); color: var(--ink-soft); }
+  .cc-step-body b { color: var(--ink); font-weight: 500; }
+  .cc-step-body code { font-family: var(--mono); font-size: 12px; padding: 1px 5px; background: var(--surface-3); border-radius: 4px; color: var(--ink); }
+
+  /* SCOPES */
+  .cc-scopes { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .cc-scope-row {
+    display: grid; grid-template-columns: 22px minmax(0, 120px) 1fr 70px;
+    align-items: center; gap: 12px;
+    padding: 11px 14px; border-bottom: 1px solid var(--line); font-size: 13px;
+  }
+  .cc-scope-row:last-child { border-bottom: 0; }
+  .cc-scope-row.locked { opacity: 0.6; }
+  .cc-scope-check { color: var(--status-sync); display: flex; align-items: center; }
+  .cc-scope-row.locked .cc-scope-check { color: var(--ink-muted); }
+  #cc-write-check { transition: color 120ms ease; }
+  #cc-write-check:hover { color: var(--ink); }
+  .cc-scope-name { font: 500 12.5px/1 var(--mono); color: var(--ink); }
+  .cc-scope-desc { font-size: 12.5px; color: var(--ink-muted); }
+  .cc-scope-tag {
+    font: 500 9.5px/1 var(--mono); letter-spacing: 0.06em; padding: 3px 7px; border-radius: 4px; text-align: center;
+    background: rgba(107,227,155,0.10); border: 1px solid rgba(107,227,155,0.28); color: var(--status-sync);
+  }
+  .cc-scope-row.locked .cc-scope-tag { background: var(--surface-2); border-color: var(--line); color: var(--ink-muted); }
+
+  /* TOKENS LIST */
+  .cc-token-list { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .cc-token-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 11px 14px; border-bottom: 1px solid var(--line); gap: 12px;
+  }
+  .cc-token-row:last-child { border-bottom: 0; }
+  .cc-token-row-info { display: flex; flex-direction: column; gap: 3px; }
+  .cc-token-row-name { font: 500 13px/1 var(--sans); color: var(--ink); }
+  .cc-token-row-meta { font: 400 11.5px/1 var(--mono); color: var(--ink-muted); }
+
+  /* DANGER */
+  .cc-danger {
+    margin-top: 48px; padding: 20px 22px;
+    border-top: 1px solid rgba(255,122,138,0.20);
+    background: linear-gradient(180deg, rgba(255,122,138,0.025), transparent 60%);
+    border-radius: 8px;
+  }
+  .cc-danger-pre { font: 500 10.5px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--status-warn); margin-bottom: 12px; }
+  .cc-danger-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .cc-danger-info { flex: 1; }
+  .cc-danger-info h3 { margin: 0 0 4px; font: 500 14px/1.3 var(--sans); color: var(--ink); }
+  .cc-danger-info p { margin: 0; font: 400 12.5px/1.5 var(--sans); color: var(--ink-muted); max-width: 36rem; }
+  .cc-danger-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 12px; border-radius: 6px; cursor: pointer;
+    background: rgba(255,122,138,0.10); color: var(--status-warn);
+    border: 1px solid rgba(255,122,138,0.28); font: 500 12.5px/1 var(--sans); white-space: nowrap;
+  }
+  .cc-danger-btn:hover { background: rgba(255,122,138,0.16); }
+  .cc-danger-btn:disabled { opacity: 0.4; cursor: default; }
+
+  .cc-btn-pri {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 14px; border-radius: 6px; cursor: pointer;
+    background: var(--accent); color: var(--on-ink);
+    border: 0; font: 500 13px/1 var(--sans); white-space: nowrap;
+  }
+  .cc-btn-pri:hover { opacity: 0.9; }
+  .cc-btn-pri:disabled { opacity: 0.5; cursor: default; }
+
+  .cc-btn-sec {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 7px 12px; border-radius: 6px; cursor: pointer;
+    background: var(--surface-2); color: var(--ink);
+    border: 1px solid var(--line-strong); font: 500 12px/1 var(--sans);
+  }
+  .cc-btn-sec:hover { background: var(--surface-3); border-color: var(--line-bright); }
+  .cc-btn-sec:disabled { opacity: 0.4; cursor: default; }
+
+  .cc-err { margin-top: 10px; font: 400 12.5px/1.5 var(--sans); color: var(--status-warn); display: none; }
+  .cc-err.visible { display: block; }
+</style>
+
+<AppLayout title="Claude connection — Mnema" workspaceName={workspaceName} email={auth.email}>
+
+  <Fragment slot="status-left">
+    <span id="sb-conn-status" style="font:500 11px/1 var(--mono);color:var(--ink-muted);">
+      Claude · {liveConnection ? 'active' : 'not connected'}
+    </span>
+  </Fragment>
+
+  <div class="cc-main">
+    <div class="cc-wrap">
+
+      <div class="cc-pre">Connections</div>
+      <h1 class="cc-h1">
+        <span class="cc-logo">C</span>
+        Claude
+      </h1>
+      <p class="cc-sub">
+        Mnema connects to Claude through the Model Context Protocol. Claude reads your docs and
+        walks your flows directly, no upload step.
+      </p>
+
+      <!-- STATUS CARD -->
+      <div class="cc-section">
+        <div class="cc-status-card">
+          <div class="cc-status-lhs">
+            <div class="cc-status-row">
+              <span class={`cc-status-dot ${liveConnection ? 'active' : hasToken ? 'pending' : 'inactive'}`}></span>
+              <span class="cc-status-label">Connection status</span>
+              <span class="cc-status-state" id="cc-status-text">{statusLabel}</span>
+            </div>
+            <div class="cc-status-meta">
+              <div class="cc-status-item">
+                <span class="cc-status-k">MCP protocol</span>
+                <span class="cc-status-v">v2025-11-05</span>
+              </div>
+              <div class="cc-status-item">
+                <span class="cc-status-k">Scopes granted</span>
+                <span class="cc-status-v" id="cc-scopes-granted">{canWrite ? 'docs:read, workspace:write' : 'docs:read'}</span>
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            {!hasToken && (
+              <button class="cc-btn-pri" id="cc-connect-btn" type="button">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                Connect
+              </button>
+            )}
+            {hasToken && (
+              <button class="cc-btn-sec" id="cc-add-btn" type="button">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                New token
+              </button>
+            )}
+          </div>
+        </div>
+
+        <!-- NEW TOKEN REVEAL (hidden until generated) -->
+        <div class="cc-token-box" id="cc-token-box">
+          <div class="cc-token-label">Your MCP Bearer token — copy it now</div>
+          <div class="cc-token-value" id="cc-token-value"></div>
+          <p class="cc-token-warn"><strong>⚠ Save this now.</strong> We don't store the raw token — once you leave this page it cannot be recovered. Paste it into Claude Desktop as shown in step 3 below.</p>
+          <button class="cc-copy" id="cc-copy-token-btn" style="align-self:flex-start;border:1px solid var(--line);border-radius:6px;">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            <span id="cc-copy-token-label">Copy token</span>
+          </button>
+        </div>
+        <div class="cc-err" id="cc-err">Failed to generate token — check that the API is running.</div>
+      </div>
+
+      <!-- LOCALHOST WARNING -->
+      {isLocalhost && (
+        <div class="cc-warn-box">
+          <span class="cc-warn-icon">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          </span>
+          <div class="cc-warn-body">
+            <strong>Localhost URLs won't work with Claude.ai or Claude Desktop's GUI.</strong>
+            <br/>
+            Claude's remote MCP connector requires a publicly reachable HTTPS URL.
+            For local testing you have two options:<br/>
+            • <strong>Tunnel with ngrok:</strong> run <code>ngrok http 8080</code>, then replace the URL below with the <code>https://…ngrok-free.app/mcp</code> URL.<br/>
+            • <strong>Direct config (Claude Desktop only):</strong> edit <code>~/Library/Application Support/Claude/claude_desktop_config.json</code> manually — localhost URLs work there even though the GUI rejects them.
+          </div>
+        </div>
+      )}
+
+      <!-- MCP ENDPOINT -->
+      <div class="cc-section">
+        <div class="cc-sec-label">Your MCP endpoint</div>
+        <h2 class="cc-sec-h">Workspace endpoint URL</h2>
+        <div class="cc-endpoint-block">
+          <span class="cc-url" id="cc-mcp-url">{mcpEndpoint}</span>
+          <button class="cc-copy" id="cc-copy-btn">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2v1"/></svg>
+            <span id="cc-copy-label">Copy</span>
+          </button>
+        </div>
+        <p class="cc-endpoint-help">Paste this into Claude Desktop's MCP connector settings.</p>
+      </div>
+
+      <!-- SETUP STEPS -->
+      <div class="cc-section">
+        <div class="cc-sec-label">Connect in 30 seconds</div>
+        <div class="cc-steps">
+          <div class={`cc-step${hasToken ? ' done' : ''}`} id="cc-step1">
+            <span class="cc-step-num">
+              {hasToken
+                ? <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+                : '1'
+              }
+            </span>
+            <div class="cc-step-body">Click <b>Connect</b> above to generate your MCP Bearer token. Copy it — you'll need it in step 3.</div>
+          </div>
+          <div class="cc-step">
+            <span class="cc-step-num">2</span>
+            <div class="cc-step-body">Open <b>Claude Desktop → Settings → Developer → Edit Config</b> (or find <code>claude_desktop_config.json</code> and add the MCP server block below).</div>
+          </div>
+          <div class="cc-step">
+            <span class="cc-step-num">3</span>
+            <div class="cc-step-body">
+              Add this to your <code>claude_desktop_config.json</code> under <code>"mcpServers"</code>:
+              <div class="cc-endpoint-block" style="margin-top:10px;">
+                <span class="cc-url" id="cc-config-snippet" style="white-space:pre;">{`"mnema": {
+  "url": "${mcpEndpoint}",
+  "headers": { "Authorization": "Bearer YOUR_TOKEN_HERE" }
+}`}</span>
+                <button class="cc-copy" id="cc-copy-config-btn">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                  <span id="cc-copy-config-label">Copy</span>
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class={`cc-step${hasToken ? ' done' : ''}`}>
+            <span class="cc-step-num">
+              {hasToken
+                ? <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+                : '4'
+              }
+            </span>
+            <div class="cc-step-body">Restart Claude Desktop and ask it something about your docs. It'll cite them in the answer — no upload, no re-indexing.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SCOPES -->
+      <div class="cc-section">
+        <div class="cc-sec-label">What Claude can access</div>
+        <p style="font-size:13px;color:var(--ink-muted);margin:0 0 12px;">
+          Choose which capabilities to include in this token. You can generate separate tokens for read-only and write access.
+        </p>
+        <div class="cc-scopes">
+          <!-- docs:read — always on, non-toggleable -->
+          <div class="cc-scope-row">
+            <span class="cc-scope-check">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </span>
+            <span class="cc-scope-name">docs:read</span>
+            <span class="cc-scope-desc">Read all docs, instructions and snippets in this workspace.</span>
+            <span class="cc-scope-tag">ALWAYS ON</span>
+          </div>
+
+          <!-- workspace:write — toggleable for write-capable roles -->
+          {canWrite ? (
+            <div class="cc-scope-row" id="cc-write-row">
+              <span class="cc-scope-check" id="cc-write-check" style="cursor:pointer;" title="Toggle workspace:write">
+                <!-- checked state shown by default -->
+                <svg id="cc-write-icon-on" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+                <svg id="cc-write-icon-off" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;"><rect x="3" y="3" width="18" height="18" rx="3"/></svg>
+              </span>
+              <span class="cc-scope-name">workspace:write</span>
+              <span class="cc-scope-desc">
+                Propose and commit edits to docs on your behalf (<code style="font-family:var(--mono);font-size:11px;padding:1px 4px;background:var(--surface-3);border-radius:3px;">propose_doc_write</code>,
+                <code style="font-family:var(--mono);font-size:11px;padding:1px 4px;background:var(--surface-3);border-radius:3px;">append_blocks_to_doc</code>, and other write tools).
+                Every write shows a preview with Approve / Reject.
+              </span>
+              <span class="cc-scope-tag" id="cc-write-tag">INCLUDED</span>
+            </div>
+          ) : (
+            <div class="cc-scope-row locked">
+              <span class="cc-scope-check">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+              </span>
+              <span class="cc-scope-name">workspace:write</span>
+              <span class="cc-scope-desc">Propose and commit edits to docs. Only available to workspace owners and editors.</span>
+              <span class="cc-scope-tag">VIEWER ONLY</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <!-- DEV TOOLS (dev_project workspaces only) -->
+      {isDevWorkspace && (
+        <div class="cc-section">
+          <div class="cc-sec-label">Dev / Kanban tools</div>
+          <p style="font-size:13px;color:var(--ink-muted);margin:0 0 12px;">
+            Your workspace is in <strong style="color:var(--ink);font-weight:500;">dev_project</strong> mode — the full AgentLens task layer is automatically enabled on every token. These tools cannot be toggled per-token; they follow the workspace mode.
+          </p>
+          <div class="cc-scopes">
+            {[
+              { name: 'get_next_task',      desc: 'Pick the next backlog task to work on.' },
+              { name: 'claim_task',         desc: 'Claim a task and move it to in-progress.' },
+              { name: 'complete_task',      desc: 'Mark a task done and log a summary.' },
+              { name: 'create_task',        desc: 'Create a one-off task in the backlog.' },
+              { name: 'create_sprints',     desc: 'Decompose a spec doc into multi-sprint plans with tasks.' },
+              { name: 'list_project_tasks', desc: 'List all tasks in the current project.' },
+              { name: 'log_blocker',        desc: 'Log a blocker against the active task.' },
+              { name: 'log_milestone',      desc: 'Record a project milestone.' },
+              { name: 'get_current_session',desc: 'Get context about the current Claude session.' },
+              { name: 'get_cost_summary',   desc: 'Summarise token cost for this session.' },
+              { name: 'get_skill_files',    desc: 'Read workspace skill/prompt files.' },
+            ].map(tool => (
+              <div class="cc-scope-row">
+                <span class="cc-scope-check">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+                </span>
+                <span class="cc-scope-name" style="font-size:11.5px;">{tool.name}</span>
+                <span class="cc-scope-desc">{tool.desc}</span>
+                <span class="cc-scope-tag">AUTO-ON</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <!-- ACTIVE TOKENS LIST -->
+      {hasToken && tokens.length > 0 && (
+        <div class="cc-section" id="cc-tokens-section">
+          <div class="cc-sec-label">Active tokens</div>
+          <div class="cc-token-list" id="cc-token-list">
+            {tokens.map(t => (
+              <div class="cc-token-row" data-token-id={t.id}>
+                <div class="cc-token-row-info">
+                  <span class="cc-token-row-name">{t.name}</span>
+                  <span class="cc-token-row-meta">
+                    Created {new Date(t.created_at).toLocaleDateString()}
+                    {t.expires_at ? ` · Expires ${new Date(t.expires_at).toLocaleDateString()}` : ' · No expiry'}
+                  </span>
+                </div>
+                <button class="cc-danger-btn cc-revoke-btn" data-token-id={t.id} type="button" style="font-size:11.5px;padding:6px 10px;">
+                  Revoke
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {!hasToken && (
+        <div id="cc-tokens-section" style="display:none;">
+          <div class="cc-sec-label">Active tokens</div>
+          <div class="cc-token-list" id="cc-token-list"></div>
+        </div>
+      )}
+
+      <!-- DANGER ZONE -->
+      <div class="cc-danger">
+        <div class="cc-danger-pre">Danger zone</div>
+        <div class="cc-danger-row">
+          <div class="cc-danger-info">
+            <h3>Revoke all connections</h3>
+            <p>Revokes every active token. Claude won't be able to read this workspace until you reconnect.</p>
+          </div>
+          <button class="cc-danger-btn" id="cc-revoke-all-btn" {!hasToken ? 'disabled' : ''} type="button">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            Revoke all
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script define:vars={{ mcpEndpoint, hasTokenInit: hasToken, canWriteInit: canWrite }}>
+    const API = '';   // relative — proxied through Astro → backend
+
+    // Track whether workspace:write is included in the next token
+    let includeWrite = canWriteInit;
+
+    // ---- scope toggle ----
+    var writeCheck = document.getElementById('cc-write-check');
+    if (writeCheck) {
+      writeCheck.addEventListener('click', function() {
+        includeWrite = !includeWrite;
+        var iconOn  = document.getElementById('cc-write-icon-on');
+        var iconOff = document.getElementById('cc-write-icon-off');
+        var tag     = document.getElementById('cc-write-tag');
+        var row     = document.getElementById('cc-write-row');
+        var granted = document.getElementById('cc-scopes-granted');
+        if (iconOn)  iconOn.style.display  = includeWrite ? '' : 'none';
+        if (iconOff) iconOff.style.display = includeWrite ? 'none' : '';
+        if (tag)  tag.textContent  = includeWrite ? 'INCLUDED' : 'EXCLUDED';
+        if (row)  row.style.opacity = includeWrite ? '1' : '0.5';
+        if (granted) granted.textContent = includeWrite ? 'docs:read, workspace:write' : 'docs:read';
+      });
+    }
+
+    // ---- helpers ----
+    function copyText(text, labelEl, original) {
+      navigator.clipboard.writeText(text).catch(() => {});
+      labelEl.textContent = 'Copied!';
+      setTimeout(() => { labelEl.textContent = original; }, 1500);
+    }
+
+    // state: 'active' | 'pending' | 'inactive'
+    function setStatus(state) {
+      const dot = document.querySelector('.cc-status-dot');
+      const txt = document.getElementById('cc-status-text');
+      const sb  = document.getElementById('sb-conn-status');
+      const revokeAll = document.getElementById('cc-revoke-all-btn');
+      const label = state === 'active' ? 'Active' : state === 'pending' ? 'Token issued — not connected' : 'Not connected';
+      if (dot) dot.className = 'cc-status-dot ' + state;
+      if (txt) txt.textContent = label;
+      if (sb)  sb.textContent  = 'Claude · ' + (state === 'active' ? 'active' : 'not connected');
+      if (revokeAll) revokeAll.disabled = (state === 'inactive');
+    }
+
+    function addTokenRow(token) {
+      const section = document.getElementById('cc-tokens-section');
+      const list    = document.getElementById('cc-token-list');
+      if (!section || !list) return;
+      section.style.display = '';
+      const expires = token.expires_at
+        ? `Expires ${new Date(token.expires_at).toLocaleDateString()}`
+        : 'No expiry';
+      // Show scopes as badges
+      const scopeBadges = (token.scopes || [])
+        .map(function(s) { return `<span style="font:500 9px/1 var(--mono);padding:2px 5px;border-radius:3px;background:var(--surface-3);color:var(--ink-muted);">${s}</span>`; })
+        .join(' ');
+      const row = document.createElement('div');
+      row.className = 'cc-token-row';
+      row.dataset.tokenId = token.id;
+      row.innerHTML = `
+        <div class="cc-token-row-info">
+          <span class="cc-token-row-name">${token.name}</span>
+          <span class="cc-token-row-meta" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            Created ${new Date(token.created_at).toLocaleDateString()} · ${expires}
+            <span style="display:flex;gap:4px;">${scopeBadges}</span>
+          </span>
+        </div>
+        <button class="cc-danger-btn cc-revoke-btn" data-token-id="${token.id}" type="button" style="font-size:11.5px;padding:6px 10px;">Revoke</button>
+      `;
+      list.appendChild(row);
+      row.querySelector('.cc-revoke-btn')?.addEventListener('click', () => revokeToken(token.id));
+    }
+
+    async function generateToken() {
+      const btn = document.getElementById('cc-connect-btn') ?? document.getElementById('cc-add-btn');
+      const box = document.getElementById('cc-token-box');
+      const val = document.getElementById('cc-token-value');
+      const err = document.getElementById('cc-err');
+      const step1 = document.getElementById('cc-step1');
+
+      if (btn) { btn.disabled = true; btn.textContent = 'Generating…'; }
+      if (err) err.classList.remove('visible');
+
+      // Build requested scopes from toggle state
+      var requestedScopes = ['docs:read'];
+      if (includeWrite) requestedScopes.push('workspace:write');
+
+      try {
+        const res = await fetch(`${API}/api/mcp-tokens`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: 'Claude Desktop', requested_scopes: requestedScopes }),
+        });
+        if (!res.ok) throw new Error(`API ${res.status}`);
+        const data = await res.json();
+
+        // Show the token
+        if (val) val.textContent = data.jwt;
+        if (box) box.classList.add('visible');
+
+        // Update config snippet
+        const snippet = document.getElementById('cc-config-snippet');
+        if (snippet) {
+          snippet.textContent = `"mnema": {\n  "url": "${mcpEndpoint}",\n  "headers": { "Authorization": "Bearer ${data.jwt}" }\n}`;
+        }
+
+        // Update step 1 to done
+        if (step1) {
+          step1.classList.add('done');
+          const numEl = step1.querySelector('.cc-step-num');
+          if (numEl) numEl.innerHTML = `<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+        }
+
+        // Swap Connect → New token button
+        const connectBtn = document.getElementById('cc-connect-btn');
+        if (connectBtn) {
+          connectBtn.id = 'cc-add-btn';
+          connectBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> New token`;
+          connectBtn.className = 'cc-btn-sec';
+          connectBtn.disabled = false;
+        }
+
+        addTokenRow(data.token);
+        setStatus('pending'); // token exists but Claude hasn't called yet
+      } catch (e) {
+        if (err) err.classList.add('visible');
+        if (btn) { btn.disabled = false; btn.textContent = btn.id === 'cc-add-btn' ? 'New token' : 'Connect'; }
+      }
+    }
+
+    async function revokeToken(id) {
+      if (!confirm('Revoke this token? Claude Desktop will lose access immediately.')) return;
+      const res = await fetch(`${API}/api/mcp-tokens/${id}`, { method: 'DELETE', credentials: 'include', headers: {} });
+      if (!res.ok && res.status !== 204) return alert('Failed to revoke token');
+      const row = document.querySelector(`[data-token-id="${id}"]`);
+      row?.remove();
+      const list = document.getElementById('cc-token-list');
+      if (list && list.children.length === 0) {
+        const sec = document.getElementById('cc-tokens-section');
+        if (sec) sec.style.display = 'none';
+        setStatus('inactive');
+        // Re-show connect button
+        const card = document.querySelector('.cc-status-card > div:last-child');
+        if (card) {
+          card.innerHTML = `<button class="cc-btn-pri" id="cc-connect-btn" type="button">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+            Connect</button>`;
+          document.getElementById('cc-connect-btn')?.addEventListener('click', generateToken);
+        }
+      }
+    }
+
+    // ---- wire events ----
+    document.getElementById('cc-connect-btn') && document.getElementById('cc-connect-btn').addEventListener('click', generateToken);
+    document.getElementById('cc-add-btn') && document.getElementById('cc-add-btn').addEventListener('click', generateToken);
+
+    // Revoke individual token rows (server-rendered)
+    document.querySelectorAll('.cc-revoke-btn').forEach(function(btn) {
+      btn.addEventListener('click', function() { revokeToken(btn.dataset.tokenId); });
+    });
+
+    var revokeAllBtn = document.getElementById('cc-revoke-all-btn');
+    if (revokeAllBtn) revokeAllBtn.addEventListener('click', async function() {
+      if (!confirm('Revoke ALL active tokens? Claude will lose access immediately.')) return;
+      var rows = Array.from(document.querySelectorAll('[data-token-id]'));
+      await Promise.all(rows.map(function(r) { return fetch(API + '/api/mcp-tokens/' + r.dataset.tokenId, { method: 'DELETE', credentials: 'include', headers: {} }); }));
+      document.querySelectorAll('.cc-token-row').forEach(function(r) { r.remove(); });
+      var sec = document.getElementById('cc-tokens-section');
+      if (sec) sec.style.display = 'none';
+      setStatus(false);
+    });
+
+    var copyBtn = document.getElementById('cc-copy-btn');
+    if (copyBtn) copyBtn.addEventListener('click', function() {
+      var url = (document.getElementById('cc-mcp-url') && document.getElementById('cc-mcp-url').textContent || '').trim();
+      copyText(url, document.getElementById('cc-copy-label'), 'Copy');
+    });
+
+    var copyTokenBtn = document.getElementById('cc-copy-token-btn');
+    if (copyTokenBtn) copyTokenBtn.addEventListener('click', function() {
+      var jwt = (document.getElementById('cc-token-value') && document.getElementById('cc-token-value').textContent || '').trim();
+      copyText(jwt, document.getElementById('cc-copy-token-label'), 'Copy token');
+    });
+
+    var copyConfigBtn = document.getElementById('cc-copy-config-btn');
+    if (copyConfigBtn) copyConfigBtn.addEventListener('click', function() {
+      var snippet = (document.getElementById('cc-config-snippet') && document.getElementById('cc-config-snippet').textContent || '').trim();
+      copyText(snippet, document.getElementById('cc-copy-config-label'), 'Copy');
+    });
+  </script>
+
+</AppLayout>

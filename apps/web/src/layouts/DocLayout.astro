@@ -1,0 +1,509 @@
+---
+import BaseLayout from './BaseLayout.astro';
+import { Sidebar } from '../components/app/Sidebar';
+import { WorkspaceSwitcher } from '../components/nav/WorkspaceSwitcher';
+
+import type { DocFolder, SourceAttachment } from '@boppl/shared';
+
+interface Props {
+  title: string;
+  docType?: string;
+  workspaceName?: string;
+  email?: string;
+  backUrl?: string;
+  sourceAttachment?: SourceAttachment | null;
+  activeView?: 'edit' | 'original' | 'mnema';
+  folder?: DocFolder | null;
+}
+
+const { title, docType = 'doc', workspaceName: wsProp, email, backUrl = '/app/content', sourceAttachment, activeView = 'edit', folder } = Astro.props;
+
+// View toggle hrefs — preserve ?back= across view switches
+const _back = Astro.url.searchParams.get('back');
+const _backParam = _back ? `back=${encodeURIComponent(_back)}&` : '';
+const viewEditHref     = `${Astro.url.pathname}?${_backParam}view=edit`;
+const viewOriginalHref = `${Astro.url.pathname}?${_backParam}view=original`;
+const viewMnemaHref    = `${Astro.url.pathname}?${_backParam}view=mnema`;
+
+const auth = Astro.locals.auth;
+if (!auth) {
+  return Astro.redirect('/auth/login');
+}
+
+const domainPart = auth.email.split('@')[1]?.split('.')[0] ?? '';
+const workspaceName = wsProp ?? (domainPart
+  ? domainPart.charAt(0).toUpperCase() + domainPart.slice(1)
+  : 'Workspace');
+const userInitial = (email?.[0] ?? auth.email[0] ?? 'U').toUpperCase();
+
+const pathname = Astro.url.pathname;
+
+const apiUrl =
+  (import.meta.env.PUBLIC_API_URL as string | undefined) ?? 'http://localhost:8080';
+let typeCounts: Record<string, number> = {};
+let workspaceMode: string | undefined = undefined;
+try {
+  const [countsRes, devRes] = await Promise.allSettled([
+    fetch(`${apiUrl}/api/content/type-counts`, {
+      headers: { Cookie: `boppl_jwt=${auth.jwt}` },
+    }),
+    fetch(`${apiUrl}/api/workspaces/${auth.tenant_id}/dev-config`, {
+      headers: { Cookie: `boppl_jwt=${auth.jwt}` },
+    }),
+  ]);
+  if (countsRes.status === 'fulfilled' && countsRes.value.ok) {
+    const body = (await countsRes.value.json()) as { counts: Record<string, number> };
+    typeCounts = body.counts ?? {};
+  }
+  if (devRes.status === 'fulfilled' && devRes.value.ok) {
+    const body = (await devRes.value.json()) as { mode: string };
+    workspaceMode = body.mode;
+  }
+} catch { /* offline */ }
+---
+
+<BaseLayout title={`${title} — Mnema`}>
+  <style is:global>
+    :root {
+      --topbar-h: 40px;
+      --editbar-h: 38px;
+      --status-h: 24px;
+      --sidebar-w: 220px;
+    }
+
+    .dl-shell {
+      display: grid;
+      grid-template-columns: var(--sidebar-w) 1fr;
+      grid-template-rows: var(--topbar-h) var(--editbar-h) 1fr var(--status-h);
+      grid-template-areas:
+        "dl-topbar  dl-topbar"
+        "dl-sidebar dl-editbar"
+        "dl-sidebar dl-main"
+        "dl-status  dl-status";
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* TOPBAR */
+    .dl-topbar {
+      grid-area: dl-topbar;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 12px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--line);
+    }
+    .dl-tb-left { display: flex; align-items: center; gap: 8px; }
+    .dl-brand {
+      display: inline-flex; align-items: center; gap: 7px;
+      font: 600 12.5px/1 var(--sans); color: var(--ink); text-decoration: none;
+    }
+    .dl-glyph {
+      width: 20px; height: 20px; border-radius: 5px;
+      overflow: hidden; display: inline-flex; flex-shrink: 0;
+    }
+    .dl-tb-div { width: 1px; height: 14px; background: var(--line-strong); flex-shrink: 0; }
+    .dl-ws-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 3px 6px 3px 4px; border-radius: 5px;
+      background: transparent; border: 1px solid transparent;
+      cursor: pointer; color: var(--ink); font: 500 12px/1 var(--sans);
+    }
+    .dl-ws-btn:hover { background: var(--surface-2); border-color: var(--line); }
+    .dl-ws-av {
+      width: 14px; height: 14px; border-radius: 4px;
+      background: linear-gradient(135deg, #7C9CFF, #C8A2FF);
+      color: white; font: 700 8.5px/1 var(--sans);
+      display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .dl-crumbs {
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      gap: 6px; font: 500 12px/1 var(--sans); color: var(--ink-muted);
+    }
+    .dl-crumbs .here { color: var(--ink); font-weight: 600; }
+    .dl-crumbs .sep { color: var(--ink-faint); font-size: 9px; }
+    .dl-tb-right { display: flex; align-items: center; gap: 2px; }
+    .dl-icon-btn {
+      width: 24px; height: 24px; border-radius: 4px;
+      background: transparent; border: 0; color: var(--ink-muted); cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center; text-decoration: none;
+    }
+    .dl-icon-btn:hover { background: var(--surface-2); color: var(--ink); }
+    .dl-share-btn {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 4px 8px; border-radius: 5px;
+      background: var(--surface-2); border: 1px solid var(--line);
+      color: var(--ink); cursor: pointer; font: 500 11.5px/1 var(--sans);
+      margin-left: 3px;
+    }
+    .dl-share-btn:hover { background: var(--surface-3); }
+    /* Export dropdown */
+    .dl-export-wrap { position: relative; display: inline-flex; }
+    .dl-export-menu {
+      display: none; position: absolute; top: calc(100% + 4px); right: 0;
+      background: color-mix(in srgb, var(--surface-overlay,var(--surface-3)) 90%, transparent);
+      backdrop-filter: blur(16px); border: 1px solid var(--line);
+      border-radius: 8px; padding: 4px; min-width: 180px; z-index: 300;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+    }
+    .dl-export-menu.open { display: block; }
+    .dl-export-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 10px; border-radius: 5px; cursor: pointer;
+      font: 400 12.5px/1 var(--sans); color: var(--ink); border: 0;
+      background: transparent; width: 100%; text-align: left;
+    }
+    .dl-export-item:hover { background: var(--surface-2); }
+    .dl-export-item:disabled { opacity: 0.5; cursor: default; }
+    .dl-user-chip {
+      width: 22px; height: 22px; border-radius: 50%;
+      background: linear-gradient(135deg, rgba(var(--accent-rgb),0.95), rgba(255,122,138,0.95));
+      color: var(--on-ink); font: 700 9.5px/1 var(--sans);
+      display: inline-flex; align-items: center; justify-content: center;
+      cursor: pointer; margin-left: 4px; text-decoration: none;
+    }
+
+    /* SIDEBAR */
+    .dl-sidebar {
+      grid-area: dl-sidebar;
+      background: var(--surface);
+      border-right: 1px solid var(--line);
+      overflow-y: auto;
+      display: flex; flex-direction: column;
+    }
+    .dl-sidebar > aside { width: 100% !important; height: 100% !important; }
+
+    /* EDIT BAR */
+    .dl-editbar {
+      grid-area: dl-editbar;
+      display: flex; align-items: center; gap: 2px;
+      padding: 0 16px;
+      background: var(--canvas);
+      border-bottom: 1px solid var(--line);
+      overflow: hidden;
+    }
+    .dl-eb-group { display: flex; align-items: center; gap: 1px; }
+    .dl-eb-sep { width: 1px; height: 16px; background: var(--line); margin: 0 6px; flex-shrink: 0; }
+    .dl-eb-btn {
+      height: 26px; min-width: 26px; padding: 0 6px;
+      border: 0; background: transparent; border-radius: 4px;
+      color: var(--ink-muted); cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+      font: 500 12px/1 var(--sans); flex-shrink: 0;
+    }
+    .dl-eb-btn:hover { background: var(--surface-2); color: var(--ink); }
+    .dl-eb-heading {
+      height: 26px; padding: 0 8px;
+      border: 0; background: transparent; border-radius: 4px;
+      color: var(--ink); cursor: pointer; flex-shrink: 0;
+      display: inline-flex; align-items: center; gap: 6px;
+      font: 500 12px/1 var(--sans);
+    }
+    .dl-eb-heading:hover { background: var(--surface-2); }
+    .dl-eb-heading svg { color: var(--ink-muted); }
+    .dl-eb-spacer { flex: 1; }
+    .dl-eb-status {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 3px 8px 3px 7px; border-radius: 999px;
+      background: rgba(107,227,155,0.08); border: 1px solid rgba(107,227,155,0.22);
+      color: var(--status-sync); font: 500 11px/1 var(--sans); flex-shrink: 0;
+    }
+    .dl-eb-status .sig { width: 5px; height: 5px; border-radius: 50%; background: currentColor; box-shadow: 0 0 4px currentColor; opacity: 0.85; }
+    .dl-ai-btn {
+      height: 26px; padding: 0 10px; flex-shrink: 0;
+      border: 1px solid var(--line-strong); background: var(--surface-2);
+      border-radius: 5px; cursor: pointer; color: var(--ink);
+      display: inline-flex; align-items: center; gap: 6px;
+      font: 500 11.5px/1 var(--sans);
+    }
+    .dl-ai-btn:hover { background: var(--surface-3); border-color: var(--line-bright); }
+    .dl-ai-btn .acc { color: var(--accent); }
+    .dl-ai-btn .shortcut {
+      font: 500 10px/1 var(--mono); padding: 2px 4px; border-radius: 3px;
+      background: var(--canvas); border: 1px solid var(--line); color: var(--ink-muted);
+    }
+
+    /* View toggle (Edit | Original) */
+    .dl-eb-view-toggle {
+      display: flex; align-items: center;
+      gap: 1px; padding: 2px; border-radius: 6px;
+      background: var(--surface-2); border: 1px solid var(--line);
+      flex-shrink: 0; margin-right: 4px;
+    }
+    .dl-eb-view-btn {
+      height: 22px; padding: 0 9px;
+      border-radius: 4px; border: 0;
+      font: 500 11.5px/1 var(--sans); color: var(--ink-muted);
+      text-decoration: none; display: inline-flex; align-items: center;
+      transition: background 120ms, color 120ms;
+    }
+    .dl-eb-view-btn:hover { color: var(--ink); }
+    .dl-eb-view-btn.active {
+      background: var(--canvas); color: var(--ink);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+    }
+
+    /* MAIN */
+    .dl-main {
+      grid-area: dl-main;
+      overflow-y: auto;
+      background: var(--canvas);
+      position: relative;
+    }
+    .dl-main.is-original {
+      overflow: hidden;
+      background: #111;
+    }
+
+    /* STATUS BAR */
+    .dl-statusbar {
+      grid-area: dl-status;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 14px;
+      background: var(--surface);
+      border-top: 1px solid var(--line);
+      font: 500 11px/1 var(--mono); letter-spacing: 0.02em; color: var(--ink-muted);
+    }
+    .dl-sb-left, .dl-sb-right { display: flex; align-items: center; gap: 14px; }
+    .dl-sb-sig {
+      width: 6px; height: 6px; border-radius: 50%; background: #6BE39B;
+      box-shadow: 0 0 5px rgba(107,227,155,0.5);
+      animation: dl-pulse 2s ease-in-out infinite;
+    }
+    @keyframes dl-pulse {
+      0%,100% { box-shadow: 0 0 0 0 rgba(107,227,155,0.55); }
+      50% { box-shadow: 0 0 0 4px rgba(107,227,155,0); }
+    }
+    .dl-sb-sep { width: 1px; height: 12px; background: var(--line); }
+    .dl-type-badge {
+      font: 500 9.5px/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase;
+      padding: 2px 6px; border-radius: 3px;
+      background: var(--surface-2); color: var(--ink-muted);
+    }
+  </style>
+
+  <div class="dl-shell" style={activeView === 'edit' && sourceAttachment?.format === 'docx' ? '--editbar-h:0px' : ''}>
+
+    <!-- TOPBAR -->
+    <header class="dl-topbar">
+      <div class="dl-tb-left">
+        <a href="/app/content" class="dl-brand">
+          <span class="dl-glyph"><img src="/logo.svg" width="20" height="20" alt="Mnema" draggable="false"></span>
+          <span>Mnema</span>
+        </a>
+        <span class="dl-tb-div"></span>
+        <WorkspaceSwitcher
+          currentWorkspaceId={auth.tenant_id}
+          client:load
+        />
+      </div>
+      <div class="dl-crumbs">
+        <a href="/app/content" style="color:var(--ink-muted);text-decoration:none;">Content</a>
+        {folder && (<>
+          <svg class="sep" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="color:var(--ink-faint)"><path d="m9 6 6 6-6 6"/></svg>
+          <a href={`/app/content?folder=${folder.id}`} style="color:var(--ink-muted);text-decoration:none;">{folder.name}</a>
+        </>)}
+        <svg class="sep" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="color:var(--ink-faint)"><path d="m9 6 6 6-6 6"/></svg>
+        <span class="here">{title || 'Untitled'}</span>
+      </div>
+      <div class="dl-tb-right">
+        {sourceAttachment && sourceAttachment.format === 'docx' && (
+          <div class="dl-eb-view-toggle" style="margin-right:6px;">
+            <a href={viewEditHref}  class:list={['dl-eb-view-btn', { active: activeView === 'edit'  }]}>Word</a>
+            <a href={viewMnemaHref} class:list={['dl-eb-view-btn', { active: activeView === 'mnema' }]}>Mnema</a>
+          </div>
+        )}
+        {sourceAttachment && sourceAttachment.format === 'pdf' && (
+          <div class="dl-eb-view-toggle" style="margin-right:6px;">
+            <a href={viewMnemaHref}    class:list={['dl-eb-view-btn', { active: activeView === 'mnema' || activeView === 'edit' }]}>Mnema</a>
+            <a href={viewOriginalHref} class:list={['dl-eb-view-btn', { active: activeView === 'original' }]}>PDF</a>
+          </div>
+        )}
+        <a href="/app/settings" class="dl-icon-btn" title="Settings">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </a>
+        <!-- Export dropdown -->
+        <div class="dl-export-wrap">
+          <button class="dl-share-btn" id="dl-export-btn" type="button">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Export ▾
+          </button>
+          <div class="dl-export-menu" id="dl-export-menu">
+            <button class="dl-export-item" id="dl-export-docx">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              Download as Word (.docx)
+            </button>
+            <button class="dl-export-item" id="dl-export-pdf">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+              Download as PDF
+            </button>
+          </div>
+        </div>
+        <button class="dl-share-btn" type="button">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><path d="M12 2v13"/></svg>
+          Share
+        </button>
+        <a href="/auth/logout" class="dl-user-chip" title="Account">{userInitial}</a>
+      </div>
+    </header>
+
+    <!-- SIDEBAR (workspace nav) -->
+    <aside class="dl-sidebar">
+      <Sidebar
+        workspaceName={workspaceName}
+        currentPath={pathname}
+        typeCounts={typeCounts}
+        workspaceMode={workspaceMode}
+        client:load
+      />
+    </aside>
+
+    <!-- EDIT BAR — hidden in Word (OnlyOffice) mode -->
+    <div class="dl-editbar" style={activeView === 'edit' && sourceAttachment?.format === 'docx' ? 'display:none' : ''}>
+      {(activeView === 'edit' && (!sourceAttachment || sourceAttachment.format !== 'docx') || activeView === 'mnema') && (<>
+        <div class="dl-eb-group">
+          <button class="dl-eb-heading" title="Block type">
+            <span>Paragraph</span>
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+        </div>
+        <span class="dl-eb-sep"></span>
+        <div class="dl-eb-group">
+          <button class="dl-eb-btn" title="Bold (⌘B)"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4h7a4 4 0 0 1 3 6.7A4 4 0 0 1 14 18H7zm2 2v4h5a2 2 0 1 0 0-4zm0 6v4h5a2 2 0 1 0 0-4z"/></svg></button>
+          <button class="dl-eb-btn" title="Italic (⌘I)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="19" y1="4" x2="10" y2="4"/><line x1="14" y1="20" x2="5" y2="20"/><line x1="15" y1="4" x2="9" y2="20"/></svg></button>
+          <button class="dl-eb-btn" title="Underline"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 4v7a6 6 0 0 0 12 0V4"/><line x1="5" y1="21" x2="19" y2="21"/></svg></button>
+          <button class="dl-eb-btn" title="Strikethrough"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M16 4H9a3 3 0 0 0-2.8 4M14 12a4 4 0 0 1 0 8H6"/><line x1="4" y1="12" x2="20" y2="12"/></svg></button>
+          <button class="dl-eb-btn" title="Inline code"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></button>
+        </div>
+        <span class="dl-eb-sep"></span>
+        <div class="dl-eb-group">
+          <button class="dl-eb-btn" title="Link"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-2 2"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l2-2"/></svg></button>
+          <button class="dl-eb-btn" title="Bullet list"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4" cy="6" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1" fill="currentColor" stroke="none"/></svg></button>
+          <button class="dl-eb-btn" title="Numbered list"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="10" y1="6" x2="20" y2="6"/><line x1="10" y1="12" x2="20" y2="12"/><line x1="10" y1="18" x2="20" y2="18"/><path d="M4 6h1v4M4 10h2M5 14H3.5a1.5 1.5 0 1 1 1.5 2.5L3 19h3"/></svg></button>
+          <button class="dl-eb-btn" title="Blockquote"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M6 17h3l2-4V7H5v6h3zm8 0h3l2-4V7h-6v6h3z"/></svg></button>
+          <button class="dl-eb-btn" title="Code block"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m10 9-3 3 3 3M14 9l3 3-3 3"/></svg></button>
+        </div>
+        <span class="dl-eb-sep"></span>
+        <button class="dl-eb-btn" title="Comment (⌘⇧M)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button>
+      </>)}
+
+      <div class="dl-eb-spacer"></div>
+
+      <!-- Doc actions (Synced · Save version · Versions · Comments · Share) are
+           rendered by the DocPage React component as a fixed overlay over this
+           right-side area. The spacer above pushes formatting buttons left,
+           leaving room for the React panel. -->
+    </div>
+
+    <!-- MAIN CONTENT -->
+    <main class:list={['dl-main', { 'is-original': activeView === 'original' || (activeView === 'edit' && !!sourceAttachment && sourceAttachment.format === 'docx') }]}>
+      <slot />
+    </main>
+
+    <!-- STATUS BAR -->
+    <footer class="dl-statusbar">
+      <div class="dl-sb-left">
+        <span style="display:flex;align-items:center;gap:6px;">
+          <span class="dl-sb-sig"></span>
+          MCP live
+        </span>
+        <span class="dl-sb-sep"></span>
+        <span class="dl-type-badge">{docType}</span>
+      </div>
+      <div class="dl-sb-right">
+        {email && <span style="color:var(--ink-soft);">{email}</span>}
+      </div>
+    </footer>
+
+  </div>
+</BaseLayout>
+
+<script>
+  // ── Export dropdown ────────────────────────────────────────────────────────
+  const exportBtn  = document.getElementById('dl-export-btn');
+  const exportMenu = document.getElementById('dl-export-menu');
+
+  exportBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    exportMenu?.classList.toggle('open');
+  });
+  document.addEventListener('click', () => exportMenu?.classList.remove('open'));
+
+  const docId = window.location.pathname.split('/').pop();
+
+  async function triggerExport(format) {
+    exportMenu?.classList.remove('open');
+    const btn = format === 'docx'
+      ? document.getElementById('dl-export-docx')
+      : document.getElementById('dl-export-pdf');
+
+    try {
+      if (btn) { btn.disabled = true; btn.textContent = format === 'pdf' ? 'Generating PDF…' : 'Generating…'; }
+
+      const res = await fetch('/api/document-files/export', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ docId, format }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? res.statusText);
+
+      const data = await res.json();
+
+      // Both formats render async in the worker (DOCX diagrams need Chromium too) — poll for status.
+      const attachmentId = data.attachmentId;
+      pendingDownloads.add(attachmentId);
+
+      const deadline = Date.now() + 45_000;
+      while (Date.now() < deadline) {
+        await new Promise(r => setTimeout(r, 1500));
+        const poll = await fetch(`/api/document-files/export/${attachmentId}/status`, { credentials: 'include' });
+        const status = await poll.json();
+        if (status.status === 'ready') {
+          pendingDownloads.delete(attachmentId);
+          downloadUrl(status.downloadUrl, `document.${format}`);
+          return;
+        }
+        if (status.status === 'failed') throw new Error(status.errorMessage ?? 'Generation failed');
+      }
+      pendingDownloads.delete(attachmentId);
+      alert(`${format.toUpperCase()} generation timed out. Try again.`);
+    } catch (err) {
+      alert(`Export failed: ${err.message ?? err}`);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = format === 'docx' ? 'Download as Word (.docx)' : 'Download as PDF';
+      }
+    }
+  }
+
+  document.getElementById('dl-export-docx')?.addEventListener('click', () => triggerExport('docx'));
+  document.getElementById('dl-export-pdf')?.addEventListener('click',  () => triggerExport('pdf'));
+
+  function downloadUrl(url, filename) {
+    const a = document.createElement('a');
+    a.href = url; a.download = filename; a.rel = 'noopener';
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  // ── SSE: attachment_ready ──────────────────────────────────────────────────
+  const pendingDownloads = new Set();
+
+  const es = new EventSource('/api/notifications/stream', { withCredentials: true });
+  es.addEventListener('attachment_ready', (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      if (!pendingDownloads.has(data.attachmentId)) return;
+      // Fetch fresh signed URL
+      fetch(`/api/document-files/export/${data.attachmentId}/status`, { credentials: 'include' })
+        .then(r => r.json())
+        .then(status => {
+          if (status.downloadUrl) {
+            pendingDownloads.delete(data.attachmentId);
+            downloadUrl(status.downloadUrl, `document.${data.format}`);
+          }
+        })
+        .catch(() => {});
+    } catch {}
+  });
+</script>

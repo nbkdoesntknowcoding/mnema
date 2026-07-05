@@ -1,0 +1,18 @@
+---
+import AppLayout from '../../layouts/AppLayout.astro';
+import { NotificationsPage } from '../../components/app/NotificationsPage';
+
+const auth = Astro.locals.auth;
+if (!auth) return Astro.redirect('/auth/login');
+---
+
+<AppLayout title="Notifications" email={auth.email}>
+  <div style="padding:28px 32px;max-width:780px;">
+    <p style="font:500 11px/1 var(--mono);letter-spacing:0.08em;text-transform:uppercase;color:var(--ink-muted);margin:0 0 10px;">Notifications</p>
+    <h1 style="margin:0 0 6px;font:500 22px/1.15 var(--sans);letter-spacing:-0.02em;color:var(--ink);">Inbox</h1>
+    <p style="margin:0 0 22px;font-size:13px;color:var(--ink-soft);max-width:42rem;">
+      Access requests, mentions, and system events from your workspace. Approve or deny access requests right here.
+    </p>
+    <NotificationsPage client:load />
+  </div>
+</AppLayout>

@@ -1,0 +1,21 @@
+# Without this, `docker build` copies the host's node_modules (including
+# host-absolute symlinks pnpm creates for local dev) over whatever the
+# in-container `pnpm install` produced, breaking builds on any machine
+# that has already run `pnpm install` outside Docker.
+node_modules
+**/node_modules
+**/dist
+**/.astro
+
+.git
+.github
+
+# Local env, keys, and other secrets should never enter a build context.
+.env
+.env.*
+!.env.example
+keys/
+infra/keys/
+
+*.log
+.DS_Store

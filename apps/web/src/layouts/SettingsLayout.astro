@@ -1,0 +1,257 @@
+---
+import BaseLayout from './BaseLayout.astro';
+import { WorkspaceSwitcher } from '../components/nav/WorkspaceSwitcher';
+
+interface Props {
+  title: string;
+  workspaceName?: string;
+}
+
+const { title, workspaceName: wsProp } = Astro.props;
+
+const auth = Astro.locals.auth;
+if (!auth) {
+  return Astro.redirect('/auth/login');
+}
+
+const domainPart = auth.email.split('@')[1]?.split('.')[0] ?? '';
+const workspaceName = wsProp ?? (domainPart
+  ? domainPart.charAt(0).toUpperCase() + domainPart.slice(1)
+  : 'Workspace');
+const userInitial = (auth.email[0] ?? 'U').toUpperCase();
+
+const currentPath = Astro.url.pathname;
+
+const apiUrl2 =
+  (import.meta.env.PUBLIC_API_URL as string | undefined) ?? 'http://localhost:8080';
+let workspaceMode2 = 'knowledge';
+try {
+  const devRes = await fetch(`${apiUrl2}/api/workspaces/${auth.tenant_id}/dev-config`, {
+    headers: { Cookie: `boppl_jwt=${auth.jwt}` },
+  });
+  if (devRes.ok) {
+    const body = (await devRes.json()) as { mode: string };
+    workspaceMode2 = body.mode ?? 'knowledge';
+  }
+} catch {
+  /* API offline */
+}
+const isDevProject = workspaceMode2 === 'dev_project';
+
+const NAV_SECTIONS = [
+  {
+    label: 'Workspace',
+    items: [
+      { href: '/app/settings/workspace', label: 'Workspace' },
+      { href: '/app/settings/api-keys', label: 'API Keys' },
+      { href: '/app/settings/dev', label: 'Dev / AgentLens' },
+    ],
+  },
+  {
+    label: 'Account',
+    items: [
+      { href: '/app/settings/account', label: 'Account' },
+      { href: '/app/settings/billing', label: 'Billing' },
+    ],
+  },
+];
+---
+
+<BaseLayout title={`${title} · Settings · Mnema`}>
+  <style is:global>
+    :root {
+      --topbar-h: 44px;
+      --status-h: 26px;
+      --sidebar-w: 220px;
+    }
+
+    .st-shell {
+      display: grid;
+      grid-template-columns: var(--sidebar-w) 1fr;
+      grid-template-rows: var(--topbar-h) 1fr var(--status-h);
+      grid-template-areas:
+        "st-topbar st-topbar"
+        "st-sidebar st-main"
+        "st-status st-status";
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* TOPBAR */
+    .st-topbar {
+      grid-area: st-topbar;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 12px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--line);
+    }
+    .st-tb-left { display: flex; align-items: center; gap: 10px; }
+    .st-brand {
+      display: inline-flex; align-items: center; gap: 8px;
+      font: 600 13px/1 var(--sans); color: var(--ink); text-decoration: none;
+    }
+    .st-glyph {
+      width: 22px; height: 22px; border-radius: 6px;
+      overflow: hidden; display: inline-flex; flex-shrink: 0;
+    }
+    .st-tb-div { width: 1px; height: 16px; background: var(--line-strong); flex-shrink: 0; }
+    .st-crumbs {
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      gap: 6px; font: 500 12px/1 var(--sans); color: var(--ink-muted);
+    }
+    .st-crumbs .st-here { color: var(--ink); font-weight: 600; }
+    .st-crumbs .st-sep { color: var(--ink-faint); font-size: 9px; }
+    .st-tb-right { display: flex; align-items: center; gap: 3px; }
+    .st-icon-btn {
+      width: 26px; height: 26px; border-radius: 5px;
+      background: transparent; border: 0; color: var(--ink-muted); cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center; text-decoration: none;
+    }
+    .st-icon-btn:hover { background: var(--surface-2); color: var(--ink); }
+    .st-user-chip {
+      width: 24px; height: 24px; border-radius: 50%;
+      background: linear-gradient(135deg, rgba(var(--accent-rgb),0.95), rgba(255,122,138,0.95));
+      color: var(--on-ink); font: 700 10.5px/1 var(--sans);
+      display: inline-flex; align-items: center; justify-content: center;
+      cursor: pointer; margin-left: 4px; text-decoration: none;
+    }
+
+    /* SIDEBAR */
+    .st-sidebar {
+      grid-area: st-sidebar;
+      background: var(--surface);
+      border-right: 1px solid var(--line);
+      overflow-y: auto;
+      padding: 14px 10px;
+      display: flex; flex-direction: column; gap: 14px;
+    }
+    .st-sb-back {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 5px 8px; border-radius: 5px;
+      font: 500 11.5px/1 var(--sans); color: var(--ink-muted);
+      text-decoration: none; margin-bottom: 4px;
+    }
+    .st-sb-back:hover { background: var(--surface-2); color: var(--ink); }
+    .st-sb-section h6 {
+      margin: 0 0 4px; padding: 0 8px;
+      font: 500 10px/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-muted);
+    }
+    .st-sb-list { display: flex; flex-direction: column; gap: 1px; }
+    .st-sb-item {
+      display: flex; align-items: center; padding: 6px 8px; border-radius: 5px;
+      cursor: pointer; color: var(--ink-soft); font: 500 12px/1 var(--sans);
+      text-decoration: none; position: relative;
+    }
+    .st-sb-item:hover { background: var(--surface-2); color: var(--ink); }
+    .st-sb-item.active { background: var(--surface-2); color: var(--ink); }
+    .st-sb-item.active::before {
+      content: ""; position: absolute; left: 0; top: 6px; bottom: 6px;
+      width: 2px; background: var(--accent); border-radius: 2px;
+    }
+
+    /* MAIN */
+    .st-main {
+      grid-area: st-main;
+      overflow-y: auto;
+      background: var(--canvas);
+    }
+    .st-main-wrap {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 40px 40px 80px;
+    }
+
+    /* STATUS BAR */
+    .st-statusbar {
+      grid-area: st-status;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 14px;
+      background: var(--surface);
+      border-top: 1px solid var(--line);
+      font: 500 11px/1 var(--mono);
+      letter-spacing: 0.02em; color: var(--ink-muted);
+    }
+    .st-sb-left, .st-sb-right { display: flex; align-items: center; gap: 14px; }
+    .st-sb-sig {
+      width: 6px; height: 6px; border-radius: 50%; background: #6BE39B;
+      box-shadow: 0 0 5px rgba(107,227,155,0.5);
+      animation: st-pulse 2s ease-in-out infinite;
+    }
+    @keyframes st-pulse {
+      0%,100% { box-shadow: 0 0 0 0 rgba(107,227,155,0.55); }
+      50% { box-shadow: 0 0 0 4px rgba(107,227,155,0); }
+    }
+    .st-sb-sep { width: 1px; height: 12px; background: var(--line); }
+  </style>
+
+  <div class="st-shell">
+
+    <!-- TOPBAR -->
+    <header class="st-topbar">
+      <div class="st-tb-left">
+        <a href="/app/content" class="st-brand">
+          <span class="st-glyph"><img src="/logo.svg" width="22" height="22" alt="Mnema" draggable="false"></span>
+          <span>Mnema</span>
+        </a>
+        <span class="st-tb-div"></span>
+        <WorkspaceSwitcher
+          currentWorkspaceId={auth.tenant_id}
+          client:load
+        />
+      </div>
+      <div class="st-crumbs">
+        <span>Settings</span>
+        <svg class="st-sep" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m9 6 6 6-6 6"/></svg>
+        <span class="st-here">{title}</span>
+      </div>
+      <div class="st-tb-right">
+        <a href="/app/content" class="st-icon-btn" title="Back to app">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m15 18-6-6 6-6"/></svg>
+        </a>
+        <a href="/auth/logout" class="st-user-chip" title="Account">{userInitial}</a>
+      </div>
+    </header>
+
+    <!-- SIDEBAR -->
+    <aside class="st-sidebar">
+      {NAV_SECTIONS.map((section) => (
+        <div class="st-sb-section">
+          <h6>{section.label}</h6>
+          <div class="st-sb-list">
+            {section.items.map((item) => {
+              const isActive = currentPath === item.href || currentPath.startsWith(`${item.href}/`);
+              return (
+                <a href={item.href} class={`st-sb-item${isActive ? ' active' : ''}`}>
+                  {item.label}
+                </a>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </aside>
+
+    <!-- MAIN CONTENT -->
+    <main class="st-main">
+      <div class="st-main-wrap">
+        <slot />
+      </div>
+    </main>
+
+    <!-- STATUS BAR -->
+    <footer class="st-statusbar">
+      <div class="st-sb-left">
+        <span style="display:flex;align-items:center;gap:6px;">
+          <span class="st-sb-sig"></span>
+          MCP live
+        </span>
+        <span class="st-sb-sep"></span>
+        <span style="color:var(--ink-soft);">{auth.email}</span>
+      </div>
+      <div class="st-sb-right">
+        <span>Settings</span>
+      </div>
+    </footer>
+
+  </div>
+</BaseLayout>

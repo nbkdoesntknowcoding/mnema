@@ -1,0 +1,38 @@
+node_modules
+dist
+.env
+.env.local
+.DS_Store
+*.log
+.turbo
+.astro
+.vercel
+apps/api/keys/
+
+# Infra secrets — never commit
+infra/.env
+infra/.env.*
+!infra/.env.prod.example
+# Signing/key material — deploy provides its own (self-host-init generates them;
+# cloud mounts them). LS-1 BLOCKER: oauth-private.pem had been committed + carved public.
+infra/keys/*.pem
+infra/keys/*.key
+*.pem
+*.key
+
+# Meeting bot
+__pycache__/
+*.pyc
+.auth/
+
+realness_out/
+tests/mcp-setup/report.md
+
+# carved public repo (local artifact)
+/mnema/
+
+# public-core hygiene (build cache + local tooling)
+node_modules/
+.pnpm-store/
+.claude/
+.claire/

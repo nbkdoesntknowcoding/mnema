@@ -1,0 +1,27 @@
+---
+import AppLayout from '../../../layouts/AppLayout.astro';
+import { FlowCanvas } from '../../../components/flows/FlowCanvas';
+import type { Flow } from '../../../components/flows/FlowCanvas';
+
+const { slug } = Astro.params;
+const auth = Astro.locals.auth;
+if (!auth) return Astro.redirect('/auth/login');
+
+const apiUrl = (import.meta.env.PUBLIC_API_URL as string | undefined) ?? 'http://localhost:8080';
+const flowResponse = await fetch(`${apiUrl}/api/flows/${slug}`, {
+  headers: { Cookie: `boppl_jwt=${auth.jwt}` },
+});
+
+if (!flowResponse.ok) {
+  if (flowResponse.status === 404) {
+    return Astro.redirect('/app/flows');
+  }
+  throw new Error(`Failed to load flow: ${flowResponse.status}`);
+}
+
+const flow = (await flowResponse.json()) as Flow;
+---
+
+<AppLayout title={`${flow.name} — Flow`}>
+  <FlowCanvas client:load flow={flow} />
+</AppLayout>

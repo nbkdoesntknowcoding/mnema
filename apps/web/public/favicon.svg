@@ -1,0 +1,11 @@
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Mnema">
+  <rect width="100" height="100" fill="#000"/>
+  <!-- left stem: full height (includes descender below arch) -->
+  <rect x="24" y="13" width="11" height="74" fill="#EDE8DC"/>
+  <!-- right stem: shorter, terminates where arch meets -->
+  <rect x="65" y="13" width="11" height="47" fill="#EDE8DC"/>
+  <!-- arch: U-ring between inner and outer curves -->
+  <!-- outer rim: (24,60)→nadir(50,75)→(76,60) CW -->
+  <!-- inner rim: (65,60)→nadir(50,70)→(35,60) CCW — creates the hollow -->
+  <path fill="#EDE8DC" d="M24,60 C24,80 76,80 76,60 L65,60 C65,73 35,73 35,60 Z"/>
+</svg>

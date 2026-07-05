@@ -1,0 +1,21 @@
+---
+import AppLayout from '../../layouts/AppLayout.astro';
+import { AccessRequestsInbox } from '../../components/access/AccessRequestsInbox';
+import { DecisionApprovalsInbox } from '../../components/access/DecisionApprovalsInbox';
+import { JoinRequestsInbox } from '../../components/access/JoinRequestsInbox';
+
+const auth = Astro.locals.auth;
+if (!auth) return Astro.redirect('/auth/login');
+---
+
+<AppLayout title="Requests">
+  <div style="padding:28px 32px;max-width:860px;">
+    <h1 style="margin:0 0 6px;font:500 22px/1.15 var(--sans);letter-spacing:-0.02em;color:var(--ink);">Requests</h1>
+    <p style="margin:0 0 24px;font-size:13px;color:var(--ink-soft);max-width:42rem;">
+      Approve or deny requests to view your documents, confirm the decisions Mnema captured from your meetings, and track what you've sent.
+    </p>
+    <JoinRequestsInbox client:load />
+    <AccessRequestsInbox client:load />
+    <DecisionApprovalsInbox client:load />
+  </div>
+</AppLayout>

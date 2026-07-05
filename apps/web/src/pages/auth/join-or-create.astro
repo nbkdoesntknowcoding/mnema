@@ -1,0 +1,381 @@
+---
+import { getPendingJoinSession } from '../../lib/session.ts';
+
+// Must have a pending join cookie — anyone else gets sent away
+const pending = await getPendingJoinSession(Astro.cookies);
+if (!pending) {
+  return Astro.redirect('/login');
+}
+
+const { domain_workspaces } = pending;
+const emailDomain = pending.email.split('@')[1] ?? '';
+const userInitial = (pending.email[0] || 'U').toUpperCase();
+const apiUrl = (import.meta.env.PUBLIC_API_URL as string | undefined) ?? 'http://localhost:8080';
+
+// Read and consume the login_next cookie so the post-auth redirect works
+// even when the user goes through the join-or-create workspace picker.
+const loginNextRaw = Astro.cookies.get('login_next')?.value ?? null;
+const loginNext = loginNextRaw && loginNextRaw.startsWith('/') ? loginNextRaw : null;
+if (loginNext) Astro.cookies.delete('login_next', { path: '/' });
+
+// ── Detect a pending invitation ──────────────────────────────────────────────
+// If loginNext = '/invite/TOKEN', the user arrived from an invitation email.
+// Look up the invite server-side (no client secret needed) to find which
+// workspace they were invited to so we can show "Join" on that workspace card
+// instead of the generic "Request to join".
+let inviteToken: string | null = null;
+let invitedWorkspaceId: string | null = null;
+
+if (loginNext?.startsWith('/invite/')) {
+  inviteToken = loginNext.replace('/invite/', '').split('?')[0] ?? null;
+  if (inviteToken) {
+    try {
+      const lookupRes = await fetch(
+        `${apiUrl}/api/invitations/lookup?token=${encodeURIComponent(inviteToken)}`,
+      );
+      if (lookupRes.ok) {
+        const lookup = (await lookupRes.json()) as { workspace_id?: string; workspace_slug?: string };
+        // Prefer matching by id (exact); fall back to slug. Either identifies the workspace
+        // this user was actually invited to so its card shows "Accept & enter", not "Request to join".
+        const match = domain_workspaces.find(
+          (w) => (lookup.workspace_id && w.id === lookup.workspace_id)
+            || (lookup.workspace_slug && w.slug === lookup.workspace_slug),
+        );
+        invitedWorkspaceId = match?.id ?? null;
+        if (!invitedWorkspaceId) {
+          // Token valid but the invited workspace isn't in the same-domain list we're offering —
+          // log enough to diagnose in prod (do NOT log the token itself).
+          console.warn('[join-or-create] invite lookup matched no offered workspace', {
+            lookup_id: lookup.workspace_id, lookup_slug: lookup.workspace_slug,
+            offered: domain_workspaces.map((w) => ({ id: w.id, slug: w.slug })),
+          });
+        }
+      } else {
+        console.warn('[join-or-create] invite lookup failed', { status: lookupRes.status });
+      }
+    } catch (err) {
+      console.warn('[join-or-create] invite lookup threw', err instanceof Error ? err.message : String(err));
+    }
+  }
+}
+
+// loginNext is the only value the client-side script needs (for the redirect
+// after join). No user data or secrets are passed to the browser.
+---
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Join or create workspace · Mnema</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="preload" href="/fonts/GeistVF.woff2" as="font" type="font/woff2" crossorigin />
+  <script is:inline>
+    (function(){var t=localStorage.getItem('mnema-theme')||'dark';document.documentElement.setAttribute('data-theme',t);})();
+  </script>
+  <style is:global>
+    .jc-page * { box-sizing: border-box; }
+    /* Base page surface — without this the body fell through to browser white, so the
+       dark translucent card looked grey on white and clashed with the app's dark theme. */
+    .jc-page { margin: 0; padding: 0; min-height: 100vh; position: relative; overflow-x: hidden; background: var(--canvas); color: var(--ink); }
+
+    /* FLUID BG */
+    .jc-bg { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 0; }
+    .jc-bg .jc-fluid { position: absolute; inset: 0; filter: url(#jc-goo); opacity: 0.45; }
+    [data-theme="light"] .jc-bg .jc-fluid { opacity: 0.18; mix-blend-mode: multiply; }
+    .jc-blob { position: absolute; border-radius: 50%; filter: blur(6px); will-change: transform; }
+    .jc-b1 { width: 400px; height: 400px; left: 5%; top: 10%; background: rgba(var(--accent-rgb), 0.7); animation: jc-f1 26s ease-in-out infinite; }
+    .jc-b2 { width: 320px; height: 320px; right: 8%; top: 20%; background: rgba(124,156,255,0.6); animation: jc-f2 30s ease-in-out infinite; }
+    .jc-b3 { width: 280px; height: 280px; left: 35%; bottom: -4%; background: rgba(200,162,255,0.65); animation: jc-f3 28s ease-in-out infinite; }
+    @keyframes jc-f1 { 0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(140px,80px) scale(1.1)} }
+    @keyframes jc-f2 { 0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-160px,70px) scale(1.12)} }
+    @keyframes jc-f3 { 0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(100px,-140px) scale(1.06)} }
+
+    /* TOPBAR */
+    .jc-topbar { position:relative; z-index:2; display:flex; align-items:center; justify-content:space-between; padding:18px 28px; }
+    .jc-brand { display:inline-flex; align-items:center; gap:9px; font:600 14px/1 var(--sans); color:var(--ink); text-decoration:none; }
+    .jc-glyph { width:26px; height:26px; border-radius:7px; overflow:hidden; display:inline-flex; flex-shrink:0; }
+    .jc-top-right { display:flex; align-items:center; gap:16px; color:var(--ink-muted); font:500 12px/1 var(--sans); }
+    .jc-ya { width:18px; height:18px; border-radius:50%; background:linear-gradient(135deg,rgba(var(--accent-rgb),0.95),rgba(255,122,138,0.95)); color:var(--on-ink); font:700 9px/1 var(--sans); display:inline-flex; align-items:center; justify-content:center; }
+    .jc-top-right a { color:var(--ink-soft); text-decoration:none; }
+    .jc-top-right a:hover { color:var(--ink); }
+
+    /* MAIN */
+    .jc-main { position:relative; z-index:2; display:flex; flex-direction:column; align-items:center; padding:40px 24px 80px; }
+
+    /* CARD */
+    .jc-card { width:100%; max-width:540px; background:rgba(6,7,10,0.72); backdrop-filter:blur(24px) saturate(140%); border-radius:16px; padding:30px 32px 28px; position:relative; }
+    [data-theme="light"] .jc-card { background:rgba(255,255,255,0.82); box-shadow:inset 0 1px 0 rgba(255,255,255,0.6),0 1px 0 var(--line),0 30px 60px -30px rgba(10,11,13,0.18); }
+    .jc-card::before { content:""; position:absolute; inset:0; border-radius:inherit; padding:1px; pointer-events:none; background:linear-gradient(180deg,rgba(255,255,255,0.24),rgba(255,255,255,0.04) 18%,transparent 40%); -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0); -webkit-mask-composite:xor; mask-composite:exclude; }
+    [data-theme="light"] .jc-card::before { background:linear-gradient(180deg,rgba(10,11,13,0.10),transparent 40%); }
+
+    .jc-eyebrow { font:500 10.5px/1 var(--mono); letter-spacing:0.06em; text-transform:uppercase; color:var(--ink-muted); margin-bottom:10px; }
+    .jc-card h1 { margin:0 0 7px; font:600 22px/1.25 var(--sans); letter-spacing:-0.02em; color:var(--ink); }
+    .jc-sub { margin:0 0 24px; font-size:13px; color:var(--ink-muted); line-height:1.5; }
+    .jc-sub strong { color:var(--ink); }
+
+    /* WORKSPACE CARDS */
+    .jc-ws-list { display:flex; flex-direction:column; gap:8px; margin-bottom:20px; }
+    .jc-ws-card {
+      display:flex; align-items:center; gap:14px;
+      padding:14px 16px; border-radius:10px;
+      background:rgba(255,255,255,0.025);
+      border:1px solid var(--line);
+      transition:background 120ms ease,border-color 120ms ease;
+    }
+    [data-theme="light"] .jc-ws-card { background:rgba(10,11,13,0.025); }
+    .jc-ws-card:hover { background:var(--surface-2); border-color:var(--line-strong); }
+    .jc-ws-icon {
+      width:38px; height:38px; border-radius:9px;
+      background:linear-gradient(135deg,rgba(var(--accent-rgb),0.9),rgba(255,122,138,0.8));
+      display:inline-flex; align-items:center; justify-content:center;
+      color:white; font:700 17px/1 var(--sans); flex-shrink:0; position:relative;
+    }
+    .jc-ws-icon::after { content:""; position:absolute; inset:0; border-radius:inherit; background:linear-gradient(135deg,rgba(255,255,255,0.18),transparent 50%); }
+    .jc-ws-body { flex:1; min-width:0; }
+    .jc-ws-name { font:600 13.5px/1.2 var(--sans); color:var(--ink); }
+    .jc-ws-meta { font:400 11.5px/1 var(--sans); color:var(--ink-muted); margin-top:3px; }
+    .jc-join-btn {
+      display:inline-flex; align-items:center; gap:6px;
+      padding:7px 14px; border-radius:7px;
+      background:var(--ink); color:var(--on-ink);
+      font:500 12px/1 var(--sans);
+      border:0; cursor:pointer; flex-shrink:0;
+      transition:background 120ms ease;
+    }
+    .jc-join-btn:hover { background:rgba(255,255,255,0.9); }
+    [data-theme="light"] .jc-join-btn:hover { background:#1A1B1F; }
+    .jc-join-btn:disabled { opacity:0.5; cursor:not-allowed; }
+
+    /* DIVIDER */
+    .jc-divider { display:flex; align-items:center; gap:12px; margin:4px 0 20px; }
+    .jc-div-line { flex:1; height:1px; background:var(--line); }
+    .jc-div-text { font:500 11px/1 var(--mono); color:var(--ink-muted); letter-spacing:0.06em; }
+
+    /* CREATE NEW */
+    .jc-create-card {
+      display:flex; align-items:center; gap:14px;
+      padding:14px 16px; border-radius:10px;
+      background:transparent;
+      border:1px dashed var(--line-strong);
+      cursor:pointer;
+      transition:background 120ms ease,border-color 120ms ease;
+      width:100%; text-align:left;
+    }
+    .jc-create-card:hover { background:var(--surface-2); border-color:var(--accent-line); }
+    .jc-create-icon {
+      width:38px; height:38px; border-radius:9px;
+      background:var(--surface-2); border:1px solid var(--line-strong);
+      display:inline-flex; align-items:center; justify-content:center;
+      color:var(--ink-muted); flex-shrink:0;
+    }
+    .jc-create-card:hover .jc-create-icon { color:var(--accent); border-color:var(--accent-line); }
+    .jc-create-body { flex:1; }
+    .jc-create-label { font:600 13.5px/1.2 var(--sans); color:var(--ink); }
+    .jc-create-sub { font:400 11.5px/1.35 var(--sans); color:var(--ink-muted); margin-top:3px; }
+
+    /* ERROR */
+    .jc-error { font:400 12px/1.4 var(--sans); color:#FF7A8A; margin-top:12px; display:none; }
+    .jc-error.visible { display:block; }
+
+    /* LOADING OVERLAY */
+    .jc-loading { display:none; position:fixed; inset:0; z-index:100; background:rgba(6,7,10,0.7); backdrop-filter:blur(4px); align-items:center; justify-content:center; }
+    .jc-loading.active { display:flex; }
+    .jc-spinner { width:32px; height:32px; border:2.5px solid rgba(255,255,255,0.15); border-top-color:rgba(255,255,255,0.8); border-radius:50%; animation:jc-spin 0.7s linear infinite; }
+    @keyframes jc-spin { to { transform:rotate(360deg); } }
+  </style>
+</head>
+<body class="jc-page">
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <filter id="jc-goo">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="22" result="blur"/>
+      <feColorMatrix in="blur" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 22 -11" result="goo"/>
+      <feBlend in="SourceGraphic" in2="goo"/>
+    </filter>
+  </defs>
+</svg>
+
+<div class="jc-bg">
+  <div class="jc-fluid">
+    <div class="jc-blob jc-b1"></div>
+    <div class="jc-blob jc-b2"></div>
+    <div class="jc-blob jc-b3"></div>
+  </div>
+</div>
+
+<header class="jc-topbar">
+  <a href="/" class="jc-brand">
+    <span class="jc-glyph"><img src="/logo.svg" width="26" height="26" alt="Mnema" draggable="false"></span>
+    <span>Mnema</span>
+  </a>
+  <div class="jc-top-right">
+    <span style="display:inline-flex;align-items:center;gap:6px;">
+      <span class="jc-ya">{userInitial}</span>
+      <span>{pending.email}</span>
+    </span>
+    <a href="/auth/logout">Sign out</a>
+  </div>
+</header>
+
+<div class="jc-loading" id="jc-loading">
+  <div class="jc-spinner"></div>
+</div>
+
+<main class="jc-main">
+  <div class="jc-card">
+    <div class="jc-eyebrow">ALMOST THERE</div>
+    <h1>Your team is already on Mnema</h1>
+    <p class="jc-sub">
+      Someone from <strong>@{emailDomain}</strong> already has a workspace.
+      Request to join them or start your own.
+    </p>
+
+    <!-- Existing workspaces -->
+    <div class="jc-ws-list" id="jc-ws-list">
+      {domain_workspaces.map((ws) => {
+        const isInvited = ws.id === invitedWorkspaceId;
+        return (
+          <div class="jc-ws-card">
+            <span class="jc-ws-icon">{ws.name[0]?.toUpperCase() ?? 'W'}</span>
+            <div class="jc-ws-body">
+              <div class="jc-ws-name">{ws.name}</div>
+              <div class="jc-ws-meta">
+                {isInvited
+                  ? 'You\'ve been invited'
+                  : ws.member_count === 1 ? '1 member' : `${ws.member_count} members`}
+              </div>
+            </div>
+            <button
+              class="jc-join-btn"
+              data-workspace-id={ws.id}
+              data-invite-token={isInvited ? inviteToken : undefined}
+            >
+              {isInvited ? 'Accept & enter' : 'Request to join'}
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+            </button>
+          </div>
+        );
+      })}
+    </div>
+
+    <div class="jc-divider">
+      <span class="jc-div-line"></span>
+      <span class="jc-div-text">OR</span>
+      <span class="jc-div-line"></span>
+    </div>
+
+    <!-- Create new -->
+    <button class="jc-create-card" id="jc-create-btn">
+      <span class="jc-create-icon">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      </span>
+      <div class="jc-create-body">
+        <div class="jc-create-label">Create a new workspace</div>
+        <div class="jc-create-sub">Start fresh — you can always invite teammates later.</div>
+      </div>
+    </button>
+
+    <p class="jc-error" id="jc-error"></p>
+  </div>
+</main>
+
+<script define:vars={{ loginNext }}>
+(function() {
+  const loading = document.getElementById('jc-loading');
+  const errEl = document.getElementById('jc-error');
+
+  function showLoading() { loading.classList.add('active'); }
+  function showError(msg) {
+    loading.classList.remove('active');
+    errEl.textContent = msg;
+    errEl.classList.add('visible');
+  }
+  function disableAll() {
+    document.querySelectorAll('.jc-join-btn').forEach(function(b) { b.disabled = true; });
+    var createBtn = document.getElementById('jc-create-btn');
+    if (createBtn) createBtn.disabled = true;
+  }
+  function enableAll() {
+    document.querySelectorAll('.jc-join-btn').forEach(function(b) { b.disabled = false; });
+    var createBtn = document.getElementById('jc-create-btn');
+    if (createBtn) createBtn.disabled = false;
+  }
+
+  // ── Join / accept invite for an existing workspace ─────────────────────────
+  // All API calls go through /api/auth/join-workspace (Astro server-side) so
+  // API_INTERNAL_SECRET never touches the browser and access_token is read
+  // from the sealed boppl_pending_join cookie server-side.
+  document.querySelectorAll('.jc-join-btn').forEach(function(btn) {
+    btn.addEventListener('click', async function() {
+      const workspaceId = btn.dataset.workspaceId;
+      const inviteToken = btn.dataset.inviteToken || null;
+      showLoading();
+      errEl.classList.remove('visible');
+      disableAll();
+
+      try {
+        const body = inviteToken
+          ? { workspace_id: workspaceId, invite_token: inviteToken }
+          : { workspace_id: workspaceId };
+
+        const res = await fetch('/api/auth/join-workspace', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(function() { return {}; });
+          throw new Error(err.error || 'join_failed');
+        }
+        const data = await res.json().catch(function() { return {}; });
+        if (data.requested) {
+          // Not an instant join — a request was sent for the owner to approve.
+          loading.classList.remove('active');
+          var meta = btn.closest('.jc-ws-card').querySelector('.jc-ws-meta');
+          if (meta) meta.textContent = 'Request sent — waiting for approval';
+          btn.textContent = 'Requested';
+          btn.disabled = true;
+          enableAll();
+          btn.disabled = true;
+          return;
+        }
+        // Session cookie is now set server-side — redirect straight to app.
+        window.location.href = loginNext || '/app';
+      } catch (e) {
+        showError('Could not join workspace. Please try again.');
+        enableAll();
+      }
+    });
+  });
+
+  // ── Create a new workspace ─────────────────────────────────────────────────
+  // Still calls /api/_internal/set-session but via the server-side Astro proxy
+  // at /api/[...path].ts — which injects the JWT server-side, so API_INTERNAL_SECRET
+  // is never needed client-side. We use the existing set-session endpoint with
+  // force_new_workspace: true, which creates a fresh workspace and returns a JWT.
+  // The session is then sealed by /api/auth/seal-session.
+  document.getElementById('jc-create-btn').addEventListener('click', async function() {
+    showLoading();
+    errEl.classList.remove('visible');
+
+    try {
+      const res = await fetch('/api/auth/create-workspace', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) throw new Error('create_failed');
+      window.location.href = '/onboarding/workspace';
+    } catch (e) {
+      showError('Could not create workspace. Please try again.');
+      loading.classList.remove('active');
+    }
+  });
+})();
+</script>
+
+</body>
+</html>

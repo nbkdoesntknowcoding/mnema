@@ -1,0 +1,219 @@
+@import 'tailwindcss';
+@import './tokens.css';
+
+/* =========================================================================
+   FONT FACES — self-hosted
+   ========================================================================= */
+
+@font-face {
+  font-family: 'Geist';
+  src: url('/fonts/geist/Geist-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Geist';
+  src: url('/fonts/geist/Geist-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Geist';
+  src: url('/fonts/geist/Geist-SemiBold.woff2') format('woff2');
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Geist Mono';
+  src: url('/fonts/geist/GeistMono-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Geist Mono';
+  src: url('/fonts/geist/GeistMono-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Instrument Serif';
+  src: url('/fonts/instrument-serif/InstrumentSerif-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Instrument Serif';
+  src: url('/fonts/instrument-serif/InstrumentSerif-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+/* =========================================================================
+   APP TOOLTIP — [data-tooltip] elements, JS-positioned (position:fixed so
+   it's never clipped by overflow:auto ancestors like the sidebar)
+   ========================================================================= */
+.app-tooltip {
+  position: fixed;
+  transform: translateY(-50%) translateX(4px);
+  background: color-mix(in srgb, var(--surface-3, #252525) 96%, transparent);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font: 500 11.5px/1 var(--sans);
+  color: var(--ink);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+  transition: opacity 130ms ease, transform 130ms ease;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.app-tooltip.visible {
+  opacity: 1;
+  transform: translateY(-50%) translateX(8px);
+}
+
+/* =========================================================================
+   SCROLLBARS — hidden everywhere, scroll still works
+   ========================================================================= */
+* {
+  scrollbar-width: none;        /* Firefox */
+  -ms-overflow-style: none;     /* IE/Edge */
+}
+*::-webkit-scrollbar {
+  display: none;                /* Chrome/Safari/WebKit */
+}
+
+/* =========================================================================
+   BASE
+   ========================================================================= */
+* { box-sizing: border-box; }
+
+html {
+  background: var(--canvas);
+  color-scheme: dark;
+}
+
+/* Scale up the entire UI on wide low-DPI displays (e.g. ultrawide monitors) */
+@media (min-width: 1600px) and (max-resolution: 1dppx) {
+  html { zoom: 1.15; }
+}
+@media (min-width: 2200px) and (max-resolution: 1dppx) {
+  html { zoom: 1.25; }
+}
+
+html[data-theme="light"] {
+  color-scheme: light;
+}
+
+body {
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--canvas);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: 'ss01' 1, 'cv11' 1;
+  transition: background-color 240ms ease, color 240ms ease;
+}
+
+::selection {
+  background: var(--selection-bg);
+}
+
+code, pre, kbd, samp, .font-mono {
+  font-family: var(--mono);
+  font-feature-settings: 'ss01' 1, 'cv11' 1;
+  letter-spacing: var(--tracking-mono);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 0;
+}
+
+/* =========================================================================
+   REACT FLOW OVERRIDES
+   Override @xyflow/react default styles to match the Mnema design system.
+   ========================================================================= */
+
+/* Canvas background */
+.react-flow {
+  background: var(--canvas);
+}
+
+/* Handles — override React Flow's white/dark defaults */
+.react-flow__handle {
+  width: 9px !important;
+  height: 9px !important;
+  background: var(--surface-2) !important;
+  border: 1.5px solid var(--line-bright) !important;
+  border-radius: 50% !important;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+/* Controls (zoom buttons) */
+.react-flow__controls {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  box-shadow: 0 12px 28px -12px rgba(0,0,0,0.5);
+}
+.react-flow__controls-button {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-soft);
+  width: 32px;
+  height: 32px;
+}
+.react-flow__controls-button:last-child {
+  border-bottom: 0;
+}
+.react-flow__controls-button:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.react-flow__controls-button svg {
+  fill: currentColor;
+}
+
+/* Attribution */
+.react-flow__attribution {
+  display: none;
+}
+
+/* Edge paths */
+.react-flow__edge-path {
+  stroke-linecap: round;
+}
+
+/* ── Landing animations ─────────────────────────────────────────── */
+@keyframes mnemaBlink {
+  0%, 50% { opacity: 1; }
+  50.01%, 100% { opacity: 0; }
+}
+
+@keyframes mnemaFadeUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mnema-reveal { animation: none !important; opacity: 1 !important; transform: none !important; }
+}

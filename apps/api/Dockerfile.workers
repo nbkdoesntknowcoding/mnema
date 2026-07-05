@@ -1,0 +1,52 @@
+FROM node:22-alpine AS builder
+
+RUN corepack enable && corepack prepare pnpm@10.23.0 --activate
+
+WORKDIR /app
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/schema/package.json ./packages/schema/
+COPY packages/schema/tsconfig.json ./packages/schema/
+COPY apps/api/package.json ./apps/api/
+
+RUN pnpm install --frozen-lockfile
+
+COPY packages/ ./packages/
+COPY apps/api/ ./apps/api/
+COPY tsconfig.base.json ./
+
+RUN pnpm --filter @boppl/schema build && pnpm --filter @boppl/api build
+
+# Runner must be glibc-based (Debian), NOT alpine: the pdf-generation worker launches Playwright
+# Chromium, and Playwright's Chromium build requires glibc + apt-installable system libs. On alpine
+# the browser can't launch, so initBrowserPool() throws and the pdf worker disables itself — every
+# PDF export then times out. bookworm-slim + `playwright install --with-deps chromium` fixes that.
+FROM node:22-bookworm-slim AS runner
+
+RUN corepack enable && corepack prepare pnpm@10.23.0 --activate
+
+WORKDIR /app
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/schema/package.json ./packages/schema/
+COPY packages/schema/tsconfig.json ./packages/schema/
+COPY apps/api/package.json ./apps/api/
+
+RUN pnpm install --frozen-lockfile --prod
+
+# Install the actual Chromium browser binary + its OS dependencies (libnss3, fonts, …). Without this
+# the `playwright` npm package resolves but has no browser to launch. Pinned to the apps/api
+# playwright version via `pnpm exec`. Browsers land in /root/.cache/ms-playwright (default).
+RUN cd apps/api && pnpm exec playwright install --with-deps chromium
+
+COPY --from=builder /app/apps/api/dist ./apps/api/dist
+COPY --from=builder /app/packages/shared ./packages/shared
+COPY --from=builder /app/packages/schema/dist ./packages/schema/dist
+# Email HTML templates (inliner reads dist/emails/html/*.html at runtime)
+COPY apps/api/src/emails/html ./apps/api/dist/emails/html
+
+ENV NODE_ENV=production
+
+CMD ["node", "apps/api/dist/workers/server.js"]

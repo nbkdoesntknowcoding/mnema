@@ -1,0 +1,46 @@
+---
+/**
+ * OAuth initiation gateway.
+ *
+ * Requires a ?provider=google|github|microsoft|apple param so we hand
+ * the user directly to the specific identity provider, bypassing the
+ * WorkOS-hosted AuthKit UI entirely.
+ *
+ * Any request without a valid provider (including bare /auth/login) is
+ * bounced back to our own /login page so the custom design is always shown.
+ *
+ * Error bounces from /auth/callback arrive here as ?error=X — those are
+ * also forwarded to /login so users see our error display, not WorkOS's.
+ */
+import { workos } from '../../lib/workos.ts';
+
+const PROVIDER_MAP: Record<string, string> = {
+  google:    'GoogleOAuth',
+  github:    'GitHubOAuth',
+  microsoft: 'MicrosoftOAuth',
+  apple:     'AppleOAuth',
+};
+
+const provider = Astro.url.searchParams.get('provider');
+const error    = Astro.url.searchParams.get('error');
+
+// Error bounce from callback → forward to our custom login page
+if (error) {
+  return Astro.redirect(`/login?error=${encodeURIComponent(error)}`);
+}
+
+const workosProvider = provider ? PROVIDER_MAP[provider] : null;
+
+if (!workosProvider) {
+  // No valid provider — show the custom login page, not WorkOS's UI
+  return Astro.redirect('/login');
+}
+
+return Astro.redirect(
+  workos.userManagement.getAuthorizationUrl({
+    provider: workosProvider,
+    clientId: (process.env.WORKOS_CLIENT_ID ?? import.meta.env.WORKOS_CLIENT_ID) as string,
+    redirectUri: (process.env.WORKOS_REDIRECT_URI ?? import.meta.env.WORKOS_REDIRECT_URI) as string,
+  }),
+);
+---

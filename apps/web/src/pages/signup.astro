@@ -1,0 +1,594 @@
+---
+import '../styles/global.css';
+
+const auth = Astro.locals.auth;
+if (auth) {
+  return Astro.redirect('/app');
+}
+---
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mnema · Create your account</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+  <link rel="preload" href="/fonts/geist/Geist-Regular.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="preload" href="/fonts/geist/Geist-Medium.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="preload" href="/fonts/geist/Geist-SemiBold.woff2" as="font" type="font/woff2" crossorigin />
+
+  <script is:inline>
+    (function () {
+      try {
+        var s = localStorage.getItem('mnema-theme');
+        document.documentElement.setAttribute('data-theme', s === 'light' ? 'light' : 'dark');
+      } catch (e) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    })();
+  </script>
+
+  <style is:global>
+    /* Auth page accent override — near-white, not amber */
+    :root {
+      --accent:     #F4F5F7;
+      --accent-rgb: 244, 245, 247;
+      --accent-soft: rgba(244, 245, 247, 0.10);
+      --accent-line: rgba(244, 245, 247, 0.28);
+
+      --aux-1-rgb: 124, 156, 255;
+      --aux-2-rgb: 200, 162, 255;
+      --aux-3-rgb: 255, 144, 120;
+
+      --intensity:  0.34;
+      --anim-mult:  1.2;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; height: 100%; }
+    body {
+      background: var(--canvas);
+      color: var(--ink);
+      font-family: var(--sans);
+      -webkit-font-smoothing: antialiased;
+      font-feature-settings: "ss01";
+      min-height: 100vh;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    /* ── Animated background ─────────────────────────────────── */
+    .s-bg {
+      position: fixed; inset: 0;
+      pointer-events: none; overflow: hidden;
+      z-index: 0;
+    }
+    .s-bg .s-grid {
+      position: absolute; inset: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.022) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.022) 1px, transparent 1px);
+      background-size: 72px 72px;
+      background-position: -1px -1px;
+      mask-image: radial-gradient(ellipse 70% 70% at 50% 40%, black 30%, transparent 88%);
+      -webkit-mask-image: radial-gradient(ellipse 70% 70% at 50% 40%, black 30%, transparent 88%);
+      animation: s-gridBreath calc(14s / var(--anim-mult)) ease-in-out infinite;
+    }
+    [data-theme="light"] .s-bg .s-grid {
+      background-image:
+        linear-gradient(rgba(10,11,13,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(10,11,13,0.04) 1px, transparent 1px);
+    }
+    @keyframes s-gridBreath {
+      0%, 100% { opacity: 0.55; }
+      50%       { opacity: 1.0; }
+    }
+
+    .s-bg .s-fluid {
+      position: absolute; inset: 0;
+      filter: url(#s-goo);
+      opacity: calc(0.6 + var(--intensity) * 0.7);
+    }
+    [data-theme="light"] .s-bg .s-fluid {
+      opacity: calc(var(--intensity) * 0.5);
+      mix-blend-mode: multiply;
+    }
+    .s-bg .s-blob {
+      position: absolute;
+      border-radius: 50%;
+      will-change: transform;
+      filter: blur(6px);
+    }
+    .s-blob.b1 { width:380px;height:380px;left:8%;top:12%;   background:rgba(var(--accent-rgb),0.85); animation:s-f1 calc(28s/var(--anim-mult)) ease-in-out infinite; }
+    .s-blob.b2 { width:440px;height:440px;right:6%;top:20%;  background:rgba(var(--aux-1-rgb),0.75); animation:s-f2 calc(34s/var(--anim-mult)) ease-in-out infinite; }
+    .s-blob.b3 { width:320px;height:320px;left:28%;bottom:-6%;background:rgba(var(--aux-2-rgb),0.78); animation:s-f3 calc(31s/var(--anim-mult)) ease-in-out infinite; }
+    .s-blob.b4 { width:280px;height:280px;right:22%;bottom:8%;background:rgba(var(--aux-3-rgb),0.72); animation:s-f4 calc(36s/var(--anim-mult)) ease-in-out infinite; }
+    .s-blob.b5 { width:220px;height:220px;left:46%;top:38%;  background:rgba(var(--accent-rgb),0.70); animation:s-f5 calc(24s/var(--anim-mult)) ease-in-out infinite; }
+    .s-blob.b6 { width:260px;height:260px;left:12%;bottom:26%;background:rgba(var(--aux-1-rgb),0.72); animation:s-f6 calc(30s/var(--anim-mult)) ease-in-out infinite; }
+
+    @keyframes s-f1 { 0%,100%{transform:translate(0,0) scale(1)} 20%{transform:translate(180px,90px) scale(1.12)} 45%{transform:translate(80px,260px) scale(0.92)} 70%{transform:translate(-100px,180px) scale(1.06)} 90%{transform:translate(40px,60px) scale(0.96)} }
+    @keyframes s-f2 { 0%,100%{transform:translate(0,0) scale(1)} 30%{transform:translate(-200px,120px) scale(1.15)} 55%{transform:translate(-90px,280px) scale(0.94)} 80%{transform:translate(60px,160px) scale(1.05)} }
+    @keyframes s-f3 { 0%,100%{transform:translate(0,0) scale(1)} 25%{transform:translate(140px,-200px) scale(1.1)} 55%{transform:translate(-50px,-120px) scale(0.92)} 80%{transform:translate(-180px,-240px) scale(1.04)} }
+    @keyframes s-f4 { 0%,100%{transform:translate(0,0) scale(1)} 35%{transform:translate(180px,-130px) scale(1.12)} 70%{transform:translate(-80px,-60px) scale(0.95)} }
+    @keyframes s-f5 { 0%,100%{transform:translate(0,0) scale(1)} 25%{transform:translate(-160px,-80px) scale(1.18)} 50%{transform:translate(200px,60px) scale(0.88)} 75%{transform:translate(80px,180px) scale(1.06)} }
+    @keyframes s-f6 { 0%,100%{transform:translate(0,0) scale(1)} 40%{transform:translate(220px,-140px) scale(1.1)} 75%{transform:translate(-60px,80px) scale(0.94)} }
+
+    .s-bg .s-aurora {
+      position: absolute; inset: -20%;
+      background:
+        radial-gradient(circle at 18% 30%, rgba(var(--accent-rgb),0.32) 0%, transparent 45%),
+        radial-gradient(circle at 82% 55%, rgba(var(--aux-1-rgb),0.30) 0%, transparent 50%),
+        radial-gradient(circle at 50% 90%, rgba(var(--aux-3-rgb),0.22) 0%, transparent 50%);
+      filter: blur(50px);
+      opacity: calc(var(--intensity) * 1.1);
+      animation: s-aurora calc(22s/var(--anim-mult)) ease-in-out infinite;
+    }
+    [data-theme="light"] .s-bg .s-aurora { mix-blend-mode: multiply; opacity: calc(var(--intensity) * 0.45); }
+    @keyframes s-aurora {
+      0%,100% { transform: translate(0,0) rotate(0deg); }
+      33%     { transform: translate(60px,-30px) rotate(2deg); }
+      66%     { transform: translate(-40px,60px) rotate(-2deg); }
+    }
+
+    .s-bg .s-scan {
+      position: absolute; left: 0; right: 0; height: 1px; top: 0;
+      background: linear-gradient(90deg, transparent, rgba(var(--accent-rgb),0.5), transparent);
+      animation: s-scan calc(18s/var(--anim-mult)) linear infinite;
+    }
+    @keyframes s-scan {
+      0%   { top:-2%; opacity:0; }
+      20%  { opacity:1; }
+      80%  { opacity:1; }
+      100% { top:102%; opacity:0; }
+    }
+
+    .s-bg .s-star {
+      position: absolute;
+      background: rgba(255,255,255,0.85);
+      border-radius: 50%;
+      opacity: 0;
+      animation: s-twinkle calc(var(--life,5s) / var(--anim-mult)) ease-in-out infinite;
+      animation-delay: var(--delay,0s);
+    }
+    [data-theme="light"] .s-bg .s-star { background: rgba(10,11,13,0.45); }
+    @keyframes s-twinkle {
+      0%,100% { opacity:0; transform:scale(0.6); }
+      50%     { opacity:0.8; transform:scale(1); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .s-bg .s-blob,.s-bg .s-aurora,.s-bg .s-grid,.s-bg .s-scan,.s-bg .s-star { animation: none !important; }
+    }
+
+    /* ── Topbar ──────────────────────────────────────────────── */
+    .s-topbar {
+      height: 64px; padding: 0 32px;
+      display: flex; align-items: center; justify-content: space-between;
+      position: relative; z-index: 2;
+    }
+    .s-brand {
+      display: inline-flex; align-items: center; gap: 12px;
+      font: 600 16px/1 var(--sans); letter-spacing: -0.01em;
+      color: var(--ink); text-decoration: none;
+    }
+    .s-brand .s-glyph {
+      width: 30px; height: 30px; border-radius: 9px;
+      overflow: hidden; display: inline-flex; flex-shrink: 0;
+    }
+    .s-top-link {
+      font: 500 13.5px/1 var(--sans);
+      color: var(--ink-soft); text-decoration: none;
+      display: inline-flex; align-items: center; gap: 4px;
+    }
+    .s-top-link a { color: var(--ink); text-decoration: none; }
+    .s-top-link a:hover { text-decoration: underline; }
+
+    /* ── Main ────────────────────────────────────────────────── */
+    .s-main {
+      display: flex; align-items: center; justify-content: center;
+      padding: 32px 24px 80px;
+      position: relative; z-index: 2;
+    }
+    .s-col {
+      display: flex; flex-direction: column; align-items: center; width: 100%;
+    }
+
+    /* ── Auth card ───────────────────────────────────────────── */
+    .s-card {
+      width: 420px; max-width: 100%;
+      background: rgba(6,7,10,0.72);
+      backdrop-filter: blur(24px) saturate(140%);
+      -webkit-backdrop-filter: blur(24px) saturate(140%);
+      border-radius: 20px;
+      padding: 36px 36px 30px;
+      position: relative;
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,0.07),
+        inset 0 0 0 1px rgba(255,255,255,0.05),
+        0 40px 80px -30px rgba(255,255,255,0.04),
+        0 60px 100px -40px rgba(0,0,0,0.7);
+    }
+    [data-theme="light"] .s-card {
+      background: rgba(255,255,255,0.78);
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,0.6),
+        0 1px 0 var(--line),
+        0 30px 60px -30px rgba(10,11,13,0.18);
+    }
+    .s-card::before {
+      content: ""; position: absolute; inset: 0;
+      border-radius: inherit; padding: 1px; pointer-events: none;
+      background: linear-gradient(180deg, rgba(255,255,255,0.28), rgba(255,255,255,0.04) 18%, rgba(255,255,255,0) 40%);
+      -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      -webkit-mask-composite: xor; mask-composite: exclude;
+    }
+    [data-theme="light"] .s-card::before {
+      background: linear-gradient(180deg, rgba(10,11,13,0.10), rgba(10,11,13,0.02) 30%, transparent 50%);
+    }
+    .s-card::after {
+      content: ""; position: absolute; left: 15%; right: 15%; bottom: -3px;
+      height: 18px; pointer-events: none;
+      background: radial-gradient(ellipse 60% 100% at 50% 0%, rgba(255,255,255,0.2), transparent 70%);
+      filter: blur(6px); opacity: 0.55;
+    }
+    [data-theme="light"] .s-card::after { display: none; }
+
+    .s-auth-mark {
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 22px;
+    }
+    .s-glyph-lg {
+      width: 56px; height: 56px;
+      border-radius: 16px;
+      overflow: hidden; display: inline-flex; flex-shrink: 0;
+    }
+
+    .s-card h1 {
+      margin: 0 0 8px;
+      font: 600 24px/1.2 var(--sans);
+      letter-spacing: -0.02em;
+      text-align: center;
+    }
+    .s-sub {
+      margin: 0 0 28px;
+      text-align: center;
+      font-size: 14px; color: var(--ink-muted);
+      line-height: 1.5;
+    }
+
+    /* ── Field ───────────────────────────────────────────────── */
+    .s-field { display: flex; flex-direction: column; gap: 7px; margin-bottom: 12px; }
+    .s-field label {
+      font: 500 12.5px/1 var(--sans);
+      color: var(--ink-soft);
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .s-field label .s-hint {
+      font: 500 11px/1 var(--sans);
+      letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--ink-muted);
+    }
+    .s-input {
+      width: 100%;
+      font: 400 14.5px/1 var(--sans);
+      padding: 13px 14px;
+      border-radius: 10px;
+      background: rgba(255,255,255,0.03);
+      color: var(--ink);
+      border: 1px solid rgba(255,255,255,0.10);
+      outline: none;
+      transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
+    }
+    [data-theme="light"] .s-input { background: rgba(10,11,13,0.025); border-color: rgba(10,11,13,0.12); }
+    .s-input::placeholder { color: var(--ink-muted); }
+    .s-input:focus {
+      border-color: rgba(var(--accent-rgb),0.6);
+      background: rgba(255,255,255,0.05);
+      box-shadow: 0 0 0 3px rgba(var(--accent-rgb),0.12);
+    }
+    [data-theme="light"] .s-input:focus { background: rgba(10,11,13,0.035); }
+
+    /* ── Primary button ──────────────────────────────────────── */
+    .s-btn-primary {
+      width: 100%; margin-top: 6px;
+      font: 600 14px/1 var(--sans);
+      padding: 14px 18px;
+      border-radius: 10px;
+      background: var(--ink); color: var(--on-ink);
+      border: 1px solid var(--ink);
+      cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      transition: transform 100ms ease, background 140ms ease;
+      position: relative;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.25);
+    }
+    .s-btn-primary:hover { background: rgba(255,255,255,0.92); }
+    [data-theme="light"] .s-btn-primary:hover { background: #1A1B1F; }
+    .s-btn-primary:active { transform: translateY(0.5px); }
+    .s-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .s-arrow { transition: transform 160ms ease; }
+    .s-btn-primary:not(:disabled):hover .s-arrow { transform: translateX(3px); }
+
+    /* ── Divider ─────────────────────────────────────────────── */
+    .s-divider {
+      display: flex; align-items: center; gap: 12px;
+      margin: 22px 0 18px;
+      color: var(--ink-muted);
+      font: 500 11px/1 var(--sans);
+      letter-spacing: 0.08em; text-transform: uppercase;
+    }
+    .s-divider::before, .s-divider::after {
+      content: ""; flex: 1; height: 1px;
+      background: rgba(255,255,255,0.08);
+    }
+    [data-theme="light"] .s-divider::before,
+    [data-theme="light"] .s-divider::after { background: rgba(10,11,13,0.08); }
+
+    /* ── SSO grid ────────────────────────────────────────────── */
+    .s-sso-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+    }
+    .s-sso {
+      display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+      padding: 11px 12px;
+      font: 500 13.5px/1 var(--sans); color: var(--ink);
+      background: rgba(255,255,255,0.025);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 10px;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 140ms ease, border-color 140ms ease;
+    }
+    [data-theme="light"] .s-sso { background: rgba(10,11,13,0.02); border-color: rgba(10,11,13,0.10); }
+    .s-sso:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.16); }
+    [data-theme="light"] .s-sso:hover { background: rgba(10,11,13,0.04); border-color: rgba(10,11,13,0.16); }
+    .s-sso svg { width: 16px; height: 16px; flex-shrink: 0; }
+
+    /* ── Legal ───────────────────────────────────────────────── */
+    .s-legal {
+      margin: 22px 0 0;
+      text-align: center;
+      color: var(--ink-muted);
+      font: 400 12px/1.55 var(--sans);
+    }
+    .s-legal a { color: var(--ink-soft); text-decoration: none; border-bottom: 1px solid var(--ink-faint); }
+    .s-legal a:hover { color: var(--ink); }
+
+    /* ── Card footer ─────────────────────────────────────────── */
+    .s-card-foot {
+      text-align: center; margin-top: 22px;
+      color: var(--ink-muted); font-size: 13.5px;
+    }
+    .s-card-foot a {
+      color: var(--ink); text-decoration: none;
+      font-weight: 500;
+      border-bottom: 1px solid var(--ink-faint); padding-bottom: 1px;
+    }
+    .s-card-foot a:hover { border-color: var(--ink); }
+
+    /* ── Trust strip ─────────────────────────────────────────── */
+    .s-trust {
+      display: flex; align-items: center; justify-content: center; gap: 28px;
+      margin-top: 56px;
+      color: var(--ink-muted);
+      font: 500 11px/1 var(--sans);
+      letter-spacing: 0.08em; text-transform: uppercase;
+    }
+    .s-trust .s-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--ink-faint); }
+    .s-trust .s-item { display: flex; align-items: center; gap: 8px; }
+    .s-trust .s-v { color: var(--ink-soft); font-weight: 600; }
+
+    /* ── Corner mark ─────────────────────────────────────────── */
+    .s-corner-mark {
+      position: fixed; left: 24px; bottom: 20px;
+      color: var(--ink-muted);
+      font: 500 11px/1 var(--sans);
+      letter-spacing: 0.08em; text-transform: uppercase;
+      z-index: 2;
+    }
+    .s-corner-mark .s-v { color: var(--ink-soft); }
+
+    /* ── Status pill ─────────────────────────────────────────── */
+    .s-status-pill {
+      position: fixed; right: 24px; bottom: 20px;
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 7px 11px 7px 9px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      color: var(--ink-soft);
+      font: 500 11px/1 var(--sans);
+      letter-spacing: 0.08em; text-transform: uppercase;
+      z-index: 2;
+      backdrop-filter: blur(8px);
+    }
+    [data-theme="light"] .s-status-pill { background: rgba(10,11,13,0.04); border-color: rgba(10,11,13,0.08); }
+    .s-signal {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: #6BE39B;
+      box-shadow: 0 0 8px rgba(107,227,155,0.6);
+      animation: s-pulse 2s ease-in-out infinite;
+    }
+    @keyframes s-pulse {
+      0%,100% { box-shadow: 0 0 0 0 rgba(107,227,155,0.7); }
+      50%     { box-shadow: 0 0 0 6px rgba(107,227,155,0); }
+    }
+  </style>
+</head>
+<body>
+
+<!-- SVG goo filter -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <filter id="s-goo">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="22" result="blur"/>
+      <feColorMatrix in="blur" mode="matrix"
+        values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 22 -11" result="goo"/>
+      <feBlend in="SourceGraphic" in2="goo"/>
+    </filter>
+  </defs>
+</svg>
+
+<!-- Animated background -->
+<div class="s-bg">
+  <div class="s-grid"></div>
+  <div class="s-aurora"></div>
+  <div class="s-scan"></div>
+  <div class="s-fluid">
+    <div class="s-blob b1"></div>
+    <div class="s-blob b2"></div>
+    <div class="s-blob b3"></div>
+    <div class="s-blob b4"></div>
+    <div class="s-blob b5"></div>
+    <div class="s-blob b6"></div>
+  </div>
+  <div id="s-stars"></div>
+</div>
+
+<!-- Topbar -->
+<header class="s-topbar">
+  <a href="/" class="s-brand">
+    <span class="s-glyph"><img src="/logo.svg" width="30" height="30" alt="Mnema" draggable="false"></span>
+    <span>Mnema</span>
+  </a>
+  <div class="s-top-link">Already have an account? <a href="/login">Sign in →</a></div>
+</header>
+
+<!-- Main content -->
+<main class="s-main">
+  <div class="s-col">
+
+    <div class="s-card" role="form" aria-label="Sign up">
+      <div class="s-auth-mark">
+        <span class="s-glyph-lg"><img src="/logo.svg" width="56" height="56" alt="Mnema" draggable="false"></span>
+      </div>
+
+      <h1>Create your account</h1>
+      <p class="s-sub">The live context engine for AI-native teams.<br/>Free forever for personal use.</p>
+
+      <div class="s-field">
+        <label for="s-email">Work email <span class="s-hint">REQUIRED</span></label>
+        <input class="s-input" id="s-email" type="email" placeholder="you@workplace.com" autocomplete="email" />
+      </div>
+
+      <button class="s-btn-primary" id="s-continue-btn" disabled>
+        Continue with email
+        <svg class="s-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+      </button>
+
+      <div class="s-divider">OR CONTINUE WITH</div>
+
+      <div class="s-sso-grid">
+        <a href="/auth/login?provider=google" class="s-sso">
+          <svg viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A10.99 10.99 0 0 0 12 23z" fill="#34A853"/><path d="M5.84 14.1A6.6 6.6 0 0 1 5.5 12c0-.73.13-1.44.34-2.1V7.07H2.18A11 11 0 0 0 1 12c0 1.78.43 3.46 1.18 4.93l3.66-2.83z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1A11 11 0 0 0 2.18 7.07l3.66 2.83C6.71 7.31 9.14 5.38 12 5.38z" fill="#EA4335"/></svg>
+          Google
+        </a>
+        <a href="/auth/login?provider=github" class="s-sso">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.54 2.87 8.39 6.84 9.75.5.09.69-.22.69-.49 0-.24-.01-.88-.01-1.73-2.78.61-3.37-1.36-3.37-1.36-.46-1.18-1.11-1.49-1.11-1.49-.91-.63.07-.62.07-.62 1 .07 1.53 1.05 1.53 1.05.89 1.55 2.34 1.1 2.91.84.09-.66.35-1.1.63-1.36-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.27 2.75 1.05A9.34 9.34 0 0 1 12 6.96c.85 0 1.71.12 2.5.34 1.91-1.32 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.94-2.34 4.81-4.57 5.06.36.32.68.94.68 1.9 0 1.37-.01 2.48-.01 2.82 0 .27.18.59.69.49C19.13 20.64 22 16.79 22 12.25 22 6.58 17.52 2 12 2z"/></svg>
+          GitHub
+        </a>
+        <a href="/auth/login?provider=microsoft" class="s-sso">
+          <svg viewBox="0 0 24 24"><rect x="3" y="3" width="8.5" height="8.5" fill="#F25022"/><rect x="12.5" y="3" width="8.5" height="8.5" fill="#7FBA00"/><rect x="3" y="12.5" width="8.5" height="8.5" fill="#00A4EF"/><rect x="12.5" y="12.5" width="8.5" height="8.5" fill="#FFB900"/></svg>
+          Microsoft
+        </a>
+        <a href="/auth/login?provider=apple" class="s-sso">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.05 12.64c-.03-2.91 2.39-4.32 2.5-4.39-1.36-1.99-3.48-2.27-4.24-2.3-1.81-.18-3.53 1.07-4.45 1.07-.92 0-2.34-1.04-3.84-1.01-1.98.03-3.8 1.15-4.82 2.92-2.05 3.55-.52 8.81 1.48 11.7.97 1.41 2.13 3.0 3.63 2.95 1.45-.06 2.0-.94 3.76-.94 1.75 0 2.25.94 3.79.91 1.56-.03 2.55-1.44 3.51-2.86 1.1-1.64 1.55-3.22 1.58-3.31-.03-.01-3.03-1.16-3.06-4.6zM14.21 4.07c.79-.96 1.32-2.29 1.18-3.61-1.13.05-2.51.76-3.33 1.71-.73.84-1.37 2.2-1.2 3.5 1.27.1 2.56-.65 3.35-1.6z"/></svg>
+          Apple
+        </a>
+      </div>
+
+      <p class="s-legal">By continuing you agree to our <a href="/terms">Terms</a> and <a href="/privacy">Privacy Policy</a>. We'll set up your workspace on the next step.</p>
+    </div>
+
+    <p class="s-card-foot">Already have an account? <a href="/login">Sign in</a></p>
+
+    <div class="s-trust">
+      <span class="s-item"><span class="s-v">4,800+</span> WORKSPACES</span>
+      <span class="s-dot"></span>
+      <span class="s-item">SOC 2 TYPE II</span>
+      <span class="s-dot"></span>
+      <span class="s-item">MCP <span class="s-v">2025-11-25</span></span>
+    </div>
+  </div>
+</main>
+
+<div class="s-corner-mark">MNEMA · <span class="s-v">v2.0</span> · AUTH</div>
+<div class="s-status-pill"><span class="s-signal"></span>ALL SYSTEMS LIVE</div>
+
+<script is:inline>
+  /* Star particles */
+  (function () {
+    var host = document.getElementById('s-stars');
+    var n = 60;
+    for (var i = 0; i < n; i++) {
+      var s = document.createElement('div');
+      s.className = 's-star';
+      var sz = 1 + Math.random() * 2.2;
+      s.style.width = s.style.height = sz + 'px';
+      s.style.left = Math.random() * 100 + '%';
+      s.style.top = Math.random() * 100 + '%';
+      s.style.setProperty('--life', (3 + Math.random() * 5).toFixed(1) + 's');
+      s.style.setProperty('--delay', (Math.random() * 5).toFixed(1) + 's');
+      host.appendChild(s);
+    }
+  })();
+
+  /* Email validation + submit state */
+  (function () {
+    var emailEl = document.getElementById('s-email');
+    var btn = document.getElementById('s-continue-btn');
+
+    function validate() {
+      var v = emailEl.value.trim();
+      btn.disabled = !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+    }
+    emailEl.addEventListener('input', validate);
+
+    var SPINNER = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"><animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="0.8s" repeatCount="indefinite"/></path></svg>';
+
+    btn.addEventListener('click', function () {
+      if (btn.disabled) return;
+      var email = emailEl.value.trim();
+      btn.disabled = true;
+      btn.innerHTML = SPINNER + ' Sending magic link…';
+
+      fetch('/auth/send-magic-link', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: email }),
+      })
+        .then(function (res) {
+          if (res.ok) {
+            btn.innerHTML = '✓ Code sent — check your inbox';
+            btn.style.background = '#6BE39B';
+            btn.style.color = '#07140C';
+            btn.style.borderColor = '#6BE39B';
+            setTimeout(function () {
+              window.location.href = '/auth/verify-code?email=' + encodeURIComponent(email);
+            }, 1000);
+          } else {
+            btn.disabled = false;
+            btn.innerHTML = '✗ Send failed — try again';
+            btn.style.background = '#f87171';
+            btn.style.color = '#fff';
+            btn.style.borderColor = '#f87171';
+            setTimeout(function () {
+              btn.innerHTML = 'Continue with email';
+              btn.style.cssText = '';
+              validate();
+            }, 3000);
+          }
+        })
+        .catch(function () {
+          btn.disabled = false;
+          btn.innerHTML = '✗ Network error — try again';
+          setTimeout(function () { btn.innerHTML = 'Continue with email'; btn.style.cssText = ''; validate(); }, 3000);
+        });
+    });
+  })();
+</script>
+
+</body>
+</html>

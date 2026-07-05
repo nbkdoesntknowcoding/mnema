@@ -1,0 +1,10 @@
+{
+  "name": "mnema-log-streamer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Isolated sidecar that tails docker logs and streams them as SSE to the admin API. The ONLY container with Docker-socket access.",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": { "start": "node index.js" },
+  "dependencies": { "dockerode": "^4.0.2" }
+}

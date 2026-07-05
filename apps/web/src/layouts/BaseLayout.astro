@@ -1,0 +1,115 @@
+---
+import '../styles/global.css';
+
+interface Props {
+  title?: string;
+}
+
+const { title = 'BOPPL Context Engine' } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1440" />
+    <title>{title}</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <link rel="preload" href="/fonts/geist/Geist-Regular.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/geist/Geist-Medium.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/geist/GeistMono-Regular.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/instrument-serif/InstrumentSerif-Regular.woff2" as="font" type="font/woff2" crossorigin />
+
+    {/*
+      Phase 4.3 — no-FOUC theme script.
+
+      Runs synchronously before any stylesheet evaluates, so the page's
+      first paint already has the right data-theme. is:inline keeps Astro
+      from hoisting/deferring it.
+
+      Resolution order:
+        1. localStorage['mnema:theme']  → 'light' | 'dark' | (absent = system)
+        2. prefers-color-scheme media query
+        3. fallback to 'dark' (the dark surface tokens are the design's
+           dark-first default)
+
+      Wrapped in try/catch because some private-mode browsers throw on
+      localStorage access; the fallback keeps the site visible.
+    */}
+    <script is:inline>
+      (function () {
+        try {
+          var stored = localStorage.getItem('mnema-theme');
+          var resolved;
+          if (stored === 'light') {
+            resolved = 'light';
+          } else if (stored === 'dark') {
+            resolved = 'dark';
+          } else if (stored === 'system') {
+            resolved = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+          } else {
+            resolved = 'dark';
+          }
+          document.documentElement.setAttribute('data-theme', resolved);
+        } catch (e) {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        }
+      })();
+    </script>
+  </head>
+  <body class="font-sans">
+    <slot />
+    <script is:inline>
+      // Lightweight fixed-position tooltip for [data-tooltip] elements.
+      // Uses position:fixed + getBoundingClientRect so it's never clipped
+      // by overflow:auto containers (sidebar, kanban columns, etc.).
+      (function () {
+        var tip = null;
+        var hideTimer = null;
+
+        function getTip() {
+          if (!tip) {
+            tip = document.createElement('div');
+            tip.className = 'app-tooltip';
+            document.body.appendChild(tip);
+          }
+          return tip;
+        }
+
+        function show(el) {
+          var text = el.getAttribute('data-tooltip');
+          if (!text) return;
+          clearTimeout(hideTimer);
+          var t = getTip();
+          t.textContent = text;
+          var r = el.getBoundingClientRect();
+          t.style.left = (r.right + 4) + 'px';
+          t.style.top  = (r.top + r.height / 2) + 'px';
+          // If tooltip would overflow right edge, flip to left side
+          requestAnimationFrame(function () {
+            var tw = t.offsetWidth;
+            if (r.right + 4 + tw > window.innerWidth - 8) {
+              t.style.left = (r.left - tw - 8) + 'px';
+            }
+            t.classList.add('visible');
+          });
+        }
+
+        function hide() {
+          if (tip) tip.classList.remove('visible');
+        }
+
+        document.addEventListener('mouseover', function (e) {
+          var el = e.target && e.target.closest && e.target.closest('[data-tooltip]');
+          if (el) { show(el); } else { hide(); }
+        });
+        document.addEventListener('mouseout', function (e) {
+          var rel = e.relatedTarget;
+          if (!rel || !(rel.closest && rel.closest('[data-tooltip]'))) hide();
+        });
+        document.addEventListener('scroll', hide, true);
+      })();
+    </script>
+  </body>
+</html>

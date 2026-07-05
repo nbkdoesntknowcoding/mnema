@@ -1,0 +1,152 @@
+---
+/**
+ * Phase 4 — self-host login/signup (AUTH_PROVIDER='password' or 'oidc'). Minimal,
+ * self-contained page so a self-host instance has a working login without WorkOS.
+ * Password mode posts to /auth/local-login and /auth/local-register; OIDC mode
+ * links to /auth/oidc/start.
+ */
+const provider = (import.meta.env.PUBLIC_AUTH_PROVIDER as string | undefined) ?? 'workos';
+const apiUrl = (import.meta.env.PUBLIC_API_URL as string | undefined) ?? 'http://localhost:8080';
+const auth = Astro.locals.auth;
+
+// MCP OAuth bridge: Claude/Cursor/etc. send the user here (via /oauth/authorize)
+// carrying an oauth_request_id. After login we bounce to the API's /oauth/resume
+// with the session JWT as proof, which renders consent and completes the connect.
+const rawReqId = Astro.url.searchParams.get('oauth_request_id');
+const oauthRequestId = rawReqId && /^[0-9a-f-]{36}$/.test(rawReqId) ? rawReqId : null;
+
+if (auth) {
+  if (oauthRequestId) {
+    return Astro.redirect(
+      `${apiUrl}/oauth/resume?request_id=${encodeURIComponent(oauthRequestId)}&proof=${encodeURIComponent(auth.jwt)}`,
+    );
+  }
+  return Astro.redirect('/app');
+}
+if (provider === 'workos') {
+  return Astro.redirect(oauthRequestId ? `/login?oauth_request_id=${encodeURIComponent(oauthRequestId)}` : '/login');
+}
+
+// Unauthenticated + OIDC: persist the request_id so /auth/oidc/callback can bridge
+// back to /oauth/resume after the IdP round-trip (mirrors the WorkOS /login cookie).
+if (oauthRequestId && provider === 'oidc') {
+  Astro.cookies.set('oauth_request_id', oauthRequestId, {
+    httpOnly: true, secure: false, sameSite: 'lax', path: '/', maxAge: 15 * 60,
+  });
+}
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sign in — Mnema</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body { font-family: system-ui, -apple-system, sans-serif; margin: 0; display: grid; place-items: center; min-height: 100vh; background: #0b0b0c; color: #eaeaea; }
+      .card { width: 340px; padding: 28px; border: 1px solid #26262a; border-radius: 14px; background: #141416; }
+      h1 { font-size: 20px; margin: 0 0 4px; }
+      p.sub { font-size: 13px; color: #9a9aa2; margin: 0 0 20px; }
+      label { display: block; font-size: 12px; color: #b6b6be; margin: 12px 0 4px; }
+      input { width: 100%; box-sizing: border-box; padding: 9px 11px; border-radius: 8px; border: 1px solid #2c2c31; background: #1b1b1e; color: #eaeaea; font-size: 14px; }
+      button { width: 100%; margin-top: 18px; padding: 10px; border: none; border-radius: 8px; background: #6366f1; color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; }
+      button:disabled { opacity: 0.6; cursor: default; }
+      .toggle { margin-top: 14px; font-size: 13px; color: #9a9aa2; text-align: center; }
+      .toggle a { color: #a5b4fc; cursor: pointer; }
+      .err { margin-top: 12px; font-size: 13px; color: #f87171; min-height: 16px; }
+      .oidc { display: block; text-align: center; margin-top: 4px; padding: 11px; border: 1px solid #2c2c31; border-radius: 8px; color: #eaeaea; text-decoration: none; font-size: 14px; font-weight: 600; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Mnema</h1>
+      <p class="sub" id="sub">Sign in to your workspace</p>
+
+      {provider === 'oidc' ? (
+        <a class="oidc" href="/auth/oidc/start">Sign in with SSO</a>
+      ) : (
+        <form id="form" autocomplete="on">
+          <label id="name-label" for="name" style="display:none">Name</label>
+          <input id="name" type="text" placeholder="Your name" style="display:none" />
+          <label for="email">Email</label>
+          <input id="email" type="email" required placeholder="you@example.com" autocomplete="username" />
+          <label for="password">Password</label>
+          <input id="password" type="password" required placeholder="••••••••" autocomplete="current-password" />
+          <button id="submit" type="submit">Sign in</button>
+          <div class="err" id="err"></div>
+          <div class="toggle">
+            <span id="toggle-text">No account?</span> <a id="toggle">Create one</a>
+          </div>
+        </form>
+      )}
+    </div>
+
+    <script>
+      (function () {
+        const form = document.getElementById('form');
+        if (!form) return;
+        let mode = 'login';
+        const name = document.getElementById('name') as HTMLInputElement;
+        const nameLabel = document.getElementById('name-label') as HTMLElement;
+        const submit = document.getElementById('submit') as HTMLButtonElement;
+        const err = document.getElementById('err') as HTMLElement;
+        const sub = document.getElementById('sub') as HTMLElement;
+        const toggle = document.getElementById('toggle') as HTMLElement;
+        const toggleText = document.getElementById('toggle-text') as HTMLElement;
+
+        toggle.addEventListener('click', function () {
+          mode = mode === 'login' ? 'register' : 'login';
+          const reg = mode === 'register';
+          name.style.display = reg ? 'block' : 'none';
+          nameLabel.style.display = reg ? 'block' : 'none';
+          submit.textContent = reg ? 'Create account' : 'Sign in';
+          sub.textContent = reg ? 'Create your workspace' : 'Sign in to your workspace';
+          toggleText.textContent = reg ? 'Already have an account?' : 'No account?';
+          toggle.textContent = reg ? 'Sign in' : 'Create one';
+          err.textContent = '';
+        });
+
+        form.addEventListener('submit', async function (e) {
+          e.preventDefault();
+          err.textContent = '';
+          submit.disabled = true;
+          const email = (document.getElementById('email') as HTMLInputElement).value.trim();
+          const password = (document.getElementById('password') as HTMLInputElement).value;
+          const endpoint = mode === 'register' ? '/auth/local-register' : '/auth/local-login';
+          const body = mode === 'register'
+            ? { email: email, password: password, display_name: name.value.trim() }
+            : { email: email, password: password };
+          try {
+            const res = await fetch(endpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+            });
+            if (res.ok) {
+              // If we came from the MCP OAuth connect flow, bounce back through
+              // this page (now authenticated) so the server bridges to consent.
+              var reqId = new URLSearchParams(location.search).get('oauth_request_id');
+              if (reqId && /^[0-9a-f-]{36}$/.test(reqId)) {
+                window.location.href = '/auth/local?oauth_request_id=' + encodeURIComponent(reqId);
+                return;
+              }
+              window.location.href = '/app';
+              return;
+            }
+            const data = (await res.json().catch(function () { return {}; })) as { error?: string };
+            const map: Record<string, string> = {
+              invalid_credentials: 'Incorrect email or password.',
+              account_exists: 'An account with that email already exists.',
+              weak_password: 'Password must be at least 8 characters.',
+              missing_fields: 'Enter an email and password.',
+            };
+            err.textContent = map[data.error ?? ''] || 'Something went wrong. Please try again.';
+          } catch (e2) {
+            err.textContent = 'Network error. Please try again.';
+          }
+          submit.disabled = false;
+        });
+      })();
+    </script>
+  </body>
+</html>
