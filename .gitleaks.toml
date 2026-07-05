@@ -1,0 +1,18 @@
+# gitleaks config for Mnema (used by the carve §7 secret gate and CI).
+# Extends the default ruleset; allowlists LS-1-triaged false positives only.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "LS-1-triaged false positives (2026-07-05)"
+# Test fixtures use intentionally-invalid / dummy tokens, not real secrets.
+paths = [
+  '''apps/api/src/tests/.*''',
+  '''.*\.test\.ts$''',
+]
+regexes = [
+  # Intentionally-invalid tampered JWT used to assert signature rejection.
+  '''bad-signature''',
+  # `r2Key` is a Drizzle column name (R2 object key), not an API key.
+  '''r2Key''',
+]

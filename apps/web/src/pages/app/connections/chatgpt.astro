@@ -1,0 +1,434 @@
+---
+import AppLayout from '../../../layouts/AppLayout.astro';
+
+const auth = Astro.locals.auth;
+if (!auth) return Astro.redirect('/auth/login');
+
+const apiUrl    = (import.meta.env.PUBLIC_API_URL as string | undefined) ?? 'http://localhost:8080';
+const publicUrl = (import.meta.env.PUBLIC_MCP_URL as string | undefined) ?? apiUrl;
+const mcpHttpUrl = `${publicUrl}/mcp/http`;
+const codexPluginUrl = `${publicUrl}/.well-known/ai-plugin.json`;
+
+const domainPart   = auth.email?.split('@')[1]?.split('.')[0] ?? '';
+const workspaceName = domainPart ? domainPart.charAt(0).toUpperCase() + domainPart.slice(1) : 'Workspace';
+
+type TokenRow = { id: string; name: string; scopes: string[]; expires_at: string | null; last_used_at: string | null; created_at: string };
+let tokens: TokenRow[] = [];
+try {
+  const res = await fetch(`${apiUrl}/api/mcp-tokens`, { headers: { Cookie: `boppl_jwt=${auth.jwt}` } });
+  if (res.ok) tokens = ((await res.json()) as { tokens: TokenRow[] }).tokens ?? [];
+} catch { /* API offline */ }
+
+// Fetch role so we know if workspace:write is available
+const WRITE_ROLES = new Set(['owner', 'admin', 'editor']);
+let userRole = 'viewer';
+try {
+  const meRes = await fetch(`${apiUrl}/api/auth/me`, { headers: { Cookie: `boppl_jwt=${auth.jwt}` } });
+  if (meRes.ok) {
+    const b = (await meRes.json()) as { role?: string };
+    if (b.role) userRole = b.role;
+  }
+} catch { /* offline */ }
+const canWrite = WRITE_ROLES.has(userRole);
+
+const LIVE_WINDOW_MS = 2 * 60 * 60 * 1000;
+const liveConnection = tokens.some(t => t.last_used_at && (Date.now() - new Date(t.last_used_at).getTime()) < LIVE_WINDOW_MS);
+const hasToken = tokens.length > 0;
+const statusLabel = liveConnection ? 'Active' : hasToken ? 'API key ready — not connected' : 'Not connected';
+---
+
+<style>
+  .cc-main { overflow-y: auto; }
+  .cc-wrap { max-width: 880px; margin: 0 auto; padding: 40px 32px 80px; }
+  .cc-pre { font: 500 11px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-muted); margin-bottom: 14px; }
+  .cc-h1 { display: flex; align-items: center; gap: 12px; margin: 0 0 12px; font: 500 32px/1 var(--sans); letter-spacing: -0.02em; color: var(--ink); }
+  .cc-logo { width: 36px; height: 36px; border-radius: 8px; background: #10a37f; color: white; font: 700 20px/1 var(--sans); display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .cc-sub { margin: 0 0 32px; font-size: 15px; line-height: 1.6; color: var(--ink-soft); max-width: 36rem; }
+  .cc-section { margin-bottom: 32px; }
+  .cc-sec-label { font: 500 10.5px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-muted); margin-bottom: 12px; }
+  .cc-sec-h { margin: 0 0 12px; font: 500 15px/1.3 var(--sans); letter-spacing: -0.005em; color: var(--ink); }
+  .cc-status-card { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+  .cc-status-lhs { display: flex; flex-direction: column; gap: 12px; }
+  .cc-status-row { display: flex; align-items: center; gap: 10px; }
+  .cc-status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .cc-status-dot.active { background: var(--status-sync); animation: cc-pulse 2s ease-in-out infinite; }
+  .cc-status-dot.inactive { background: var(--ink-muted); }
+  .cc-status-dot.pending { background: #F5A623; }
+  @keyframes cc-pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(107,227,155,0.55); } 50% { box-shadow: 0 0 0 4px rgba(107,227,155,0); } }
+  .cc-status-label { font: 500 10.5px/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-muted); }
+  .cc-status-state { font: 500 13px/1 var(--sans); color: var(--ink); }
+  .cc-status-meta { display: flex; gap: 24px; }
+  .cc-status-item { display: flex; flex-direction: column; gap: 3px; }
+  .cc-status-k { font: 500 9.5px/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-muted); }
+  .cc-status-v { font: 400 13px/1 var(--sans); color: var(--ink); }
+  .cc-endpoint-block { display: flex; align-items: stretch; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .cc-url { flex: 1; padding: 10px 14px; font: 400 13px/1 var(--mono); color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cc-copy { display: inline-flex; align-items: center; gap: 6px; padding: 10px 14px; border: 0; border-left: 1px solid var(--line); background: var(--surface-2); color: var(--ink-muted); font: 500 11px/1 var(--mono); letter-spacing: 0.04em; cursor: pointer; transition: background 140ms ease, color 140ms ease; white-space: nowrap; flex-shrink: 0; }
+  .cc-copy:hover { background: var(--surface-3); color: var(--ink); }
+  .cc-copy.copied { color: var(--status-sync); }
+  .cc-endpoint-help { margin: 8px 0 0; font-size: 12.5px; color: var(--ink-muted); }
+  .cc-steps { display: flex; flex-direction: column; }
+  .cc-step { display: flex; align-items: flex-start; gap: 14px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+  .cc-step:last-child { border-bottom: 0; }
+  .cc-step-num { width: 24px; height: 24px; border-radius: 6px; flex-shrink: 0; background: var(--surface-2); border: 1px solid var(--line); display: inline-flex; align-items: center; justify-content: center; font: 500 11px/1 var(--mono); color: var(--ink-muted); }
+  .cc-step.done .cc-step-num { background: rgba(107,227,155,0.12); border-color: rgba(107,227,155,0.28); color: var(--status-sync); }
+  .cc-step-body { flex: 1; padding-top: 3px; font: 400 13.5px/1.6 var(--sans); color: var(--ink-soft); }
+  .cc-step-body b { color: var(--ink); font-weight: 500; }
+  .cc-step-body code { font-family: var(--mono); font-size: 12px; padding: 1px 5px; background: var(--surface-3); border-radius: 4px; color: var(--ink); }
+  .cc-scopes { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .cc-scope-row { display: grid; grid-template-columns: 22px minmax(0, 120px) 1fr 70px; align-items: center; gap: 12px; padding: 11px 14px; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .cc-scope-row:last-child { border-bottom: 0; }
+  .cc-scope-check { color: var(--status-sync); display: flex; align-items: center; }
+  .cc-scope-name { font: 500 12.5px/1 var(--mono); color: var(--ink); }
+  .cc-scope-desc { font-size: 12.5px; color: var(--ink-muted); }
+  .cc-scope-tag { font: 500 9.5px/1 var(--mono); letter-spacing: 0.06em; padding: 3px 7px; border-radius: 4px; text-align: center; background: rgba(107,227,155,0.10); border: 1px solid rgba(107,227,155,0.28); color: var(--status-sync); }
+  .cc-token-list { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .cc-token-row { display: flex; align-items: center; justify-content: space-between; padding: 11px 14px; border-bottom: 1px solid var(--line); gap: 12px; }
+  .cc-token-row:last-child { border-bottom: 0; }
+  .cc-token-row-info { display: flex; flex-direction: column; gap: 3px; }
+  .cc-token-row-name { font: 500 13px/1 var(--sans); color: var(--ink); }
+  .cc-token-row-meta { font: 400 11.5px/1 var(--mono); color: var(--ink-muted); }
+  .cc-token-box { margin-top: 12px; padding: 14px 16px; background: rgba(107,227,155,0.06); border: 1px solid rgba(107,227,155,0.24); border-radius: 8px; display: none; flex-direction: column; gap: 10px; }
+  .cc-token-box.visible { display: flex; }
+  .cc-token-label { font: 500 10px/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--status-sync); }
+  .cc-token-value { font: 400 11.5px/1.5 var(--mono); color: var(--ink); word-break: break-all; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; white-space: pre-wrap; max-height: 100px; overflow-y: auto; }
+  .cc-token-warn { font: 400 12px/1.5 var(--sans); color: var(--ink-muted); }
+  .cc-token-warn strong { color: var(--status-warn); font-weight: 500; }
+  .cc-danger { margin-top: 48px; padding: 20px 22px; border-top: 1px solid rgba(255,122,138,0.20); background: linear-gradient(180deg, rgba(255,122,138,0.025), transparent 60%); border-radius: 8px; }
+  .cc-danger-pre { font: 500 10.5px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--status-warn); margin-bottom: 12px; }
+  .cc-danger-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .cc-danger-info h3 { margin: 0 0 4px; font: 500 14px/1.3 var(--sans); color: var(--ink); }
+  .cc-danger-info p { margin: 0; font: 400 12.5px/1.5 var(--sans); color: var(--ink-muted); max-width: 36rem; }
+  .cc-danger-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 6px; cursor: pointer; background: rgba(255,122,138,0.10); color: var(--status-warn); border: 1px solid rgba(255,122,138,0.28); font: 500 12.5px/1 var(--sans); white-space: nowrap; }
+  .cc-danger-btn:hover { background: rgba(255,122,138,0.16); }
+  .cc-danger-btn:disabled { opacity: 0.4; cursor: default; }
+  .cc-btn-pri { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 6px; cursor: pointer; background: var(--accent); color: var(--on-ink); border: 0; font: 500 13px/1 var(--sans); white-space: nowrap; }
+  .cc-btn-pri:hover { opacity: 0.9; }
+  .cc-btn-sec { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 6px; cursor: pointer; background: var(--surface-2); color: var(--ink); border: 1px solid var(--line-strong); font: 500 12px/1 var(--sans); }
+  .cc-btn-sec:hover { background: var(--surface-3); }
+  .cc-err { margin-top: 10px; font: 400 12.5px/1.5 var(--sans); color: var(--status-warn); display: none; }
+  .cc-err.visible { display: block; }
+</style>
+
+<AppLayout title="ChatGPT connection — Mnema" workspaceName={workspaceName} email={auth.email}>
+
+  <Fragment slot="status-left">
+    <span style="font:500 11px/1 var(--mono);color:var(--ink-muted);">
+      ChatGPT · {liveConnection ? 'active' : 'not connected'}
+    </span>
+  </Fragment>
+
+  <div class="cc-main">
+    <div class="cc-wrap">
+
+      <div class="cc-pre">Connections</div>
+      <h1 class="cc-h1">
+        <span class="cc-logo">G</span>
+        ChatGPT
+      </h1>
+      <p class="cc-sub">
+        Connect Mnema to ChatGPT via native MCP. Works for Business/Enterprise admins,
+        Pro/Plus Developer Mode, and the OpenAI API.
+      </p>
+
+      <!-- STATUS CARD -->
+      <div class="cc-section">
+        <div class="cc-status-card">
+          <div class="cc-status-lhs">
+            <div class="cc-status-row">
+              <span class={`cc-status-dot ${liveConnection ? 'active' : hasToken ? 'pending' : 'inactive'}`}></span>
+              <span class="cc-status-label">Connection status</span>
+              <span class="cc-status-state">{statusLabel}</span>
+            </div>
+            <div class="cc-status-meta">
+              <div class="cc-status-item">
+                <span class="cc-status-k">Transport</span>
+                <span class="cc-status-v">Streamable HTTP</span>
+              </div>
+              <div class="cc-status-item">
+                <span class="cc-status-k">Auth</span>
+                <span class="cc-status-v">Bearer (API key)</span>
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            {!hasToken && (
+              <button class="cc-btn-pri" id="cc-connect-btn" type="button">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                Generate API key
+              </button>
+            )}
+            {hasToken && (
+              <button class="cc-btn-sec" id="cc-add-btn" type="button">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                New key
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div class="cc-token-box" id="cc-token-box">
+          <div class="cc-token-label">Your API Bearer token — copy it now</div>
+          <div class="cc-token-value" id="cc-token-value"></div>
+          <p class="cc-token-warn"><strong>⚠ Save this now.</strong> We don't store the raw token — once you leave this page it cannot be recovered.</p>
+          <button class="cc-copy" id="cc-copy-token-btn" style="align-self:flex-start;border:1px solid var(--line);border-radius:6px;">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            <span id="cc-copy-token-label">Copy token</span>
+          </button>
+        </div>
+        <div class="cc-err" id="cc-err">Failed to generate key — check that the API is running.</div>
+      </div>
+
+      <!-- ENDPOINT -->
+      <div class="cc-section">
+        <div class="cc-sec-label">Your MCP HTTP endpoint</div>
+        <h2 class="cc-sec-h">Streamable HTTP URL</h2>
+        <div class="cc-endpoint-block">
+          <span class="cc-url" id="cc-mcp-url">{mcpHttpUrl}</span>
+          <button class="cc-copy" id="cc-copy-btn">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            <span id="cc-copy-label">Copy</span>
+          </button>
+        </div>
+        <p class="cc-endpoint-help">Paste this URL wherever ChatGPT asks for a custom MCP server.</p>
+      </div>
+
+      <!-- SETUP STEPS — 3 paths -->
+      <div class="cc-section">
+        <div class="cc-sec-label">ChatGPT Business / Enterprise</div>
+        <div class="cc-steps">
+          <div class="cc-step">
+            <span class="cc-step-num">1</span>
+            <div class="cc-step-body">Generate an API key above (if you haven't already).</div>
+          </div>
+          <div class="cc-step">
+            <span class="cc-step-num">2</span>
+            <div class="cc-step-body">Go to <b>admin.openai.com → Connectors → Add custom connector</b>.</div>
+          </div>
+          <div class="cc-step">
+            <span class="cc-step-num">3</span>
+            <div class="cc-step-body">Paste the MCP HTTP URL above, set authentication to <b>Bearer</b>, and paste your API key.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="cc-section">
+        <div class="cc-sec-label">ChatGPT Pro / Plus — Developer Mode</div>
+        <div class="cc-steps">
+          <div class="cc-step">
+            <span class="cc-step-num">1</span>
+            <div class="cc-step-body">In ChatGPT: <b>Settings → Beta features → Enable Developer Mode</b>.</div>
+          </div>
+          <div class="cc-step">
+            <span class="cc-step-num">2</span>
+            <div class="cc-step-body">In the chat, click the tools icon → <b>Add MCP server</b>, paste the URL and your API key.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="cc-section">
+        <div class="cc-sec-label">OpenAI API (code)</div>
+        <div class="cc-steps">
+          <div class="cc-step">
+            <span class="cc-step-num">1</span>
+            <div class="cc-step-body">
+              Add Mnema to the <code>tools</code> array in your API call:
+              <div class="cc-endpoint-block" style="margin-top:10px;">
+                <span class="cc-url" id="cc-api-snippet" style="white-space:pre;font-size:11.5px;">{`{
+  "type": "mcp",
+  "server_label": "mnema",
+  "server_url": "${mcpHttpUrl}",
+  "headers": { "Authorization": "Bearer YOUR_API_KEY" }
+}`}</span>
+                <button class="cc-copy" id="cc-copy-api-btn">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                  <span id="cc-copy-api-label">Copy</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="cc-section">
+        <div class="cc-sec-label">OpenAI Codex</div>
+        <h2 class="cc-sec-h">Plugin manifest</h2>
+        <div class="cc-endpoint-block">
+          <span class="cc-url" id="cc-codex-url">{codexPluginUrl}</span>
+          <button class="cc-copy" id="cc-copy-codex-btn">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            <span id="cc-copy-codex-label">Copy</span>
+          </button>
+        </div>
+        <p class="cc-endpoint-help">Register Mnema as a Codex plugin using this manifest URL.</p>
+      </div>
+
+      <!-- SCOPES -->
+      <div class="cc-section">
+        <div class="cc-sec-label">What ChatGPT can access</div>
+        <p style="font-size:13px;color:var(--ink-muted);margin:0 0 12px;">
+          Toggle <code style="font-family:var(--mono);font-size:11px;padding:1px 4px;background:var(--surface-3);border-radius:3px;">workspace:write</code> to allow ChatGPT to create and edit docs. Generate a new key after changing this.
+        </p>
+        <div class="cc-scopes">
+          <!-- docs:read — always on -->
+          <div class="cc-scope-row">
+            <span class="cc-scope-check"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+            <span class="cc-scope-name">docs:read</span>
+            <span class="cc-scope-desc">Read all docs, instructions and snippets in this workspace.</span>
+            <span class="cc-scope-tag">ALWAYS ON</span>
+          </div>
+
+          <!-- workspace:write — toggleable, only for owners/editors -->
+          {canWrite ? (
+            <div class="cc-scope-row" id="cc-write-row">
+              <span class="cc-scope-check" id="cc-write-check" style="cursor:pointer;" title="Toggle workspace:write">
+                <svg id="cc-write-icon-on" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+                <svg id="cc-write-icon-off" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;"><rect x="3" y="3" width="18" height="18" rx="3"/></svg>
+              </span>
+              <span class="cc-scope-name">workspace:write</span>
+              <span class="cc-scope-desc">
+                Create docs, edit docs, create tasks, create folders.
+                Every write shows an Approve / Reject preview before committing.
+              </span>
+              <span class="cc-scope-tag" id="cc-write-tag">INCLUDED</span>
+            </div>
+          ) : (
+            <div class="cc-scope-row" style="opacity:0.6;">
+              <span class="cc-scope-check"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span>
+              <span class="cc-scope-name">workspace:write</span>
+              <span class="cc-scope-desc">Create and edit docs. Only available to workspace owners and editors.</span>
+              <span class="cc-scope-tag" style="background:var(--surface-2);border-color:var(--line);color:var(--ink-muted);">VIEWER ONLY</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <!-- ACTIVE TOKENS -->
+      {hasToken ? (
+        <div class="cc-section" id="cc-tokens-section">
+          <div class="cc-sec-label">Active API keys</div>
+          <div class="cc-token-list" id="cc-token-list">
+            {tokens.map(t => (
+              <div class="cc-token-row" data-token-id={t.id}>
+                <div class="cc-token-row-info">
+                  <span class="cc-token-row-name">{t.name}</span>
+                  <span class="cc-token-row-meta">Created {new Date(t.created_at).toLocaleDateString()}{t.expires_at ? ` · Expires ${new Date(t.expires_at).toLocaleDateString()}` : ' · No expiry'}</span>
+                </div>
+                <button class="cc-danger-btn cc-revoke-btn" data-token-id={t.id} type="button" style="font-size:11.5px;padding:6px 10px;">Revoke</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div id="cc-tokens-section" style="display:none;">
+          <div class="cc-token-list" id="cc-token-list"></div>
+        </div>
+      )}
+
+      <!-- DANGER -->
+      <div class="cc-danger">
+        <div class="cc-danger-pre">Danger zone</div>
+        <div class="cc-danger-row">
+          <div class="cc-danger-info">
+            <h3>Revoke all API keys</h3>
+            <p>Revokes every active key. ChatGPT won't be able to reach this workspace until you reconnect.</p>
+          </div>
+          <button class="cc-danger-btn" id="cc-revoke-all-btn" type="button" {!hasToken ? 'disabled' : ''}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            Revoke all
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script define:vars={{ mcpHttpUrl, codexPluginUrl, hasTokenInit: hasToken, canWriteInit: canWrite }}>
+    const API = '';
+    let includeWrite = canWriteInit;
+
+    // Scope toggle
+    const writeCheck = document.getElementById('cc-write-check');
+    if (writeCheck) {
+      writeCheck.addEventListener('click', () => {
+        includeWrite = !includeWrite;
+        document.getElementById('cc-write-icon-on').style.display  = includeWrite ? '' : 'none';
+        document.getElementById('cc-write-icon-off').style.display = includeWrite ? 'none' : '';
+        document.getElementById('cc-write-tag').textContent  = includeWrite ? 'INCLUDED' : 'EXCLUDED';
+        document.getElementById('cc-write-row').style.opacity = includeWrite ? '1' : '0.5';
+      });
+    }
+
+    function copyText(text, labelEl, original) {
+      navigator.clipboard.writeText(text).catch(() => {});
+      labelEl.textContent = 'Copied!';
+      setTimeout(() => { labelEl.textContent = original; }, 1500);
+    }
+
+    function setStatus(state) {
+      const dot = document.querySelector('.cc-status-dot');
+      const revokeAll = document.getElementById('cc-revoke-all-btn');
+      if (dot) dot.className = 'cc-status-dot ' + state;
+      if (revokeAll) revokeAll.disabled = (state === 'inactive');
+    }
+
+    function addTokenRow(token) {
+      const section = document.getElementById('cc-tokens-section');
+      const list    = document.getElementById('cc-token-list');
+      if (!section || !list) return;
+      section.style.display = '';
+      const row = document.createElement('div');
+      row.className = 'cc-token-row'; row.dataset.tokenId = token.id;
+      row.innerHTML = `<div class="cc-token-row-info"><span class="cc-token-row-name">${token.name}</span><span class="cc-token-row-meta">Created ${new Date(token.created_at).toLocaleDateString()}</span></div><button class="cc-danger-btn cc-revoke-btn" data-token-id="${token.id}" type="button" style="font-size:11.5px;padding:6px 10px;">Revoke</button>`;
+      list.appendChild(row);
+      row.querySelector('.cc-revoke-btn')?.addEventListener('click', () => revokeToken(token.id));
+    }
+
+    async function generateToken() {
+      const btn = document.getElementById('cc-connect-btn') ?? document.getElementById('cc-add-btn');
+      const box = document.getElementById('cc-token-box');
+      const val = document.getElementById('cc-token-value');
+      const err = document.getElementById('cc-err');
+      if (btn) { btn.disabled = true; btn.textContent = 'Generating…'; }
+      if (err) err.classList.remove('visible');
+      try {
+        const scopes = ['docs:read'];
+        if (includeWrite) scopes.push('workspace:write');
+        const res = await fetch(`${API}/api/mcp-tokens`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'ChatGPT', requested_scopes: scopes }) });
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        if (val) val.textContent = data.jwt;
+        if (box) box.classList.add('visible');
+        const connectBtn = document.getElementById('cc-connect-btn');
+        if (connectBtn) { connectBtn.id = 'cc-add-btn'; connectBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> New key`; connectBtn.className = 'cc-btn-sec'; connectBtn.disabled = false; }
+        addTokenRow(data.token);
+        setStatus('pending');
+      } catch { if (err) err.classList.add('visible'); if (btn) { btn.disabled = false; btn.textContent = 'Generate API key'; } }
+    }
+
+    async function revokeToken(id) {
+      if (!confirm('Revoke this key? ChatGPT will lose access immediately.')) return;
+      const res = await fetch(`${API}/api/mcp-tokens/${id}`, { method: 'DELETE', credentials: 'include', headers: {} });
+      if (!res.ok && res.status !== 204) return alert('Failed to revoke key');
+      document.querySelector(`[data-token-id="${id}"]`)?.remove();
+      const list = document.getElementById('cc-token-list');
+      if (list && list.children.length === 0) { const sec = document.getElementById('cc-tokens-section'); if (sec) sec.style.display = 'none'; setStatus('inactive'); }
+    }
+
+    document.getElementById('cc-connect-btn')?.addEventListener('click', generateToken);
+    document.getElementById('cc-add-btn')?.addEventListener('click', generateToken);
+    document.querySelectorAll('.cc-revoke-btn').forEach(btn => btn.addEventListener('click', () => revokeToken(btn.dataset.tokenId)));
+    document.getElementById('cc-revoke-all-btn')?.addEventListener('click', async () => {
+      if (!confirm('Revoke ALL keys? ChatGPT will lose access immediately.')) return;
+      await Promise.all(Array.from(document.querySelectorAll('[data-token-id]')).map(r => fetch(API + '/api/mcp-tokens/' + r.dataset.tokenId, { method: 'DELETE', credentials: 'include', headers: {} })));
+      document.querySelectorAll('.cc-token-row').forEach(r => r.remove());
+      const sec = document.getElementById('cc-tokens-section'); if (sec) sec.style.display = 'none';
+      setStatus('inactive');
+    });
+    document.getElementById('cc-copy-btn')?.addEventListener('click', () => copyText(mcpHttpUrl, document.getElementById('cc-copy-label'), 'Copy'));
+    document.getElementById('cc-copy-token-btn')?.addEventListener('click', () => copyText((document.getElementById('cc-token-value')?.textContent ?? '').trim(), document.getElementById('cc-copy-token-label'), 'Copy token'));
+    document.getElementById('cc-copy-codex-btn')?.addEventListener('click', () => copyText(codexPluginUrl, document.getElementById('cc-copy-codex-label'), 'Copy'));
+    document.getElementById('cc-copy-api-btn')?.addEventListener('click', () => copyText((document.getElementById('cc-api-snippet')?.textContent ?? '').trim(), document.getElementById('cc-copy-api-label'), 'Copy'));
+  </script>
+
+</AppLayout>

@@ -1,0 +1,12 @@
+---
+// Phase 5: /app moves to /app/content. Keep the old URL working as a
+// back-compat redirect so existing bookmarks, magic-link emails, and
+// the home-link from the marketing pages all still land somewhere sane.
+
+const auth = Astro.locals.auth;
+if (!auth) {
+  return Astro.redirect('/auth/login');
+}
+
+return Astro.redirect('/app/content', 302);
+---

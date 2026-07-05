@@ -1,0 +1,120 @@
+---
+import PublicLayout from '../../layouts/PublicLayout.astro';
+---
+
+<PublicLayout
+  title="Connect to Claude — Mnema docs"
+  description="Step-by-step setup for connecting Mnema to your Claude account."
+  pathname="/docs/connect"
+>
+  <article class="max-w-[680px] mx-auto px-6 pt-[80px] pb-[96px]">
+    <a
+      href="/docs"
+      class="transition-colors inline-block mb-8"
+      style="font-size: 12px; color: var(--text-tertiary);"
+      onmouseover="this.style.color='var(--text-primary)'"
+      onmouseout="this.style.color='var(--text-tertiary)'"
+    >
+      ← All docs
+    </a>
+
+    <span
+      class="block mb-3 font-mono uppercase"
+      style="font-size: 11px; letter-spacing: 0.08em; color: var(--text-tertiary);"
+    >
+      Setup guide
+    </span>
+    <h1
+      style="font-size: 28px; line-height: 1.3; letter-spacing: -0.01em; font-weight: 500; color: var(--text-primary);"
+    >
+      Connect Mnema to Claude
+    </h1>
+    <p
+      class="mt-3 mb-12"
+      style="font-size: 15px; color: var(--text-secondary);"
+    >
+      One-time setup. About 30 seconds.
+    </p>
+
+    <ol class="space-y-8 list-none">
+      {[
+        {
+          heading: 'Open your Claude account settings',
+          body: (
+            <span>
+              Go to <a href="https://claude.ai/settings/connectors" class="underline" style="color: var(--text-primary);">claude.ai/settings/connectors</a>.
+              You need Claude Pro or higher to use MCP connectors.
+            </span>
+          ),
+        },
+        {
+          heading: 'Add a custom connector',
+          body: (
+            <span>
+              Click "Add custom connector" and paste your Mnema workspace URL. You can find it in{' '}
+              <span style="color: var(--text-primary);">Mnema → Settings → Workspace</span>. It looks like{' '}
+              <code
+                style="font-family: var(--font-mono); font-size: 12px; background: var(--surface-sunken); border-radius: var(--radius-sm); padding: 2px 6px; color: var(--text-primary);"
+              >
+                https://api.mnema.app/mcp
+              </code>.
+            </span>
+          ),
+        },
+        {
+          heading: 'Authorize',
+          body: (
+            <span>
+              Claude will open Mnema's authorization screen. Sign in with the email tied to your workspace.
+              You'll see a consent prompt listing what Claude can do — read your docs, search them, fetch sections.
+              Click <span style="color: var(--text-primary);">Authorize</span>.
+            </span>
+          ),
+        },
+        {
+          heading: 'Try it',
+          body: (
+            <span>
+              In a Claude chat, ask something that references your docs: "What does our architecture doc say about deployment?"
+              Claude will call Mnema, find the doc, and answer from current content.
+            </span>
+          ),
+        },
+      ].map((step, i) => (
+        <li class="flex gap-4">
+          <div
+            class="flex-shrink-0 flex items-center justify-center font-mono font-medium"
+            style="width: 28px; height: 28px; border-radius: 50%; background: var(--surface-elevated); border: 1px solid var(--border-default); font-size: 13px; color: var(--text-primary);"
+          >
+            {i + 1}
+          </div>
+          <div class="pt-0.5">
+            <h2 style="font-size: 16px; font-weight: 500; color: var(--text-primary); line-height: 1.5; margin-bottom: 4px;">
+              {step.heading}
+            </h2>
+            <p style="font-size: 14px; color: var(--text-secondary); line-height: 1.65;">
+              {step.body}
+            </p>
+          </div>
+        </li>
+      ))}
+    </ol>
+
+    <div
+      class="mt-16 p-6"
+      style="background: var(--surface-overlay); border: 1px solid var(--border-default); border-radius: var(--radius-lg);"
+    >
+      <h3 style="font-size: 14px; font-weight: 500; color: var(--text-primary); margin-bottom: 8px;">
+        What Claude can access
+      </h3>
+      <p style="font-size: 14px; color: var(--text-secondary); line-height: 1.65;">
+        When you authorize, you grant Claude <span style="color: var(--text-primary);">docs:read</span> permission
+        — which lets it search and read docs in your workspace. It also lets Claude discover and walk
+        your <a href="/docs/flows" style="color: var(--text-primary);" class="underline">flows</a>
+        (sequenced content for structured context delivery). Write access
+        (<span style="color: var(--text-primary);">docs:write</span>) is a separate scope for letting
+        Claude draft and update docs directly.
+      </p>
+    </div>
+  </article>
+</PublicLayout>

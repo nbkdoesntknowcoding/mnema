@@ -1,0 +1,10 @@
+---
+import AppLayout from '../../layouts/AppLayout.astro';
+import { TeamPage } from '../../components/dev/TeamPage';
+
+const auth = Astro.locals.auth;
+if (!auth) return Astro.redirect('/auth/login');
+---
+<AppLayout title="Team">
+  <TeamPage client:load />
+</AppLayout>

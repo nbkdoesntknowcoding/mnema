@@ -1,0 +1,84 @@
+---
+import type { DocFull } from '@boppl/shared';
+import DocLayout from '../../../layouts/DocLayout.astro';
+import AppLayout from '../../../layouts/AppLayout.astro';
+import { DocPage } from '../../../components/editor/DocPage';
+import { LockedDoc } from '../../../components/access/LockedDoc';
+
+const auth = Astro.locals.auth;
+if (!auth) {
+  return Astro.redirect('/auth/login');
+}
+
+const { id: doc_id } = Astro.params;
+if (!doc_id) {
+  return Astro.redirect('/app/content');
+}
+
+const apiUrl =
+  (import.meta.env.PUBLIC_API_URL as string | undefined) ?? 'http://localhost:8080';
+const collabUrl =
+  (import.meta.env.PUBLIC_COLLAB_URL as string | undefined) ?? 'ws://localhost:1234';
+const response = await fetch(`${apiUrl}/api/docs/${doc_id}`, {
+  headers: { Cookie: `boppl_jwt=${auth.jwt}` },
+});
+
+if (response.status === 404) {
+  return new Response('Doc not found in your workspace', { status: 404 });
+}
+
+// 403 access_denied → the doc exists but the viewer can't see it. Render a locked
+// card with a "Request access" action instead of a hard error.
+let lockedTitle: string | null = null;
+let doc: DocFull | null = null;
+if (response.status === 403) {
+  const body = (await response.json().catch(() => ({}))) as { stub?: { title?: string } };
+  lockedTitle = body?.stub?.title ?? 'this document';
+} else if (!response.ok) {
+  return new Response('Failed to load doc', { status: 500 });
+} else {
+  ({ doc } = (await response.json()) as { doc: DocFull });
+}
+
+// Back navigation: respect ?back= param so folder context is preserved
+const rawBack = Astro.url.searchParams.get('back') ?? '';
+const backUrl = rawBack.startsWith('/app/') ? rawBack : '/app/content';
+const sourceAttachment = doc?.sourceAttachment ?? null;
+const folder = doc?.folder ?? null;
+
+// View routing:
+//   DOCX docs:  'edit' (default) → OnlyOffice | 'mnema' → ProseMirror editor
+//   PDF docs:   'edit'/'mnema' (default) → ProseMirror editor | 'original' → PDF viewer
+//   Other docs: always 'edit' (ProseMirror editor, no toggle shown)
+const rawView = Astro.url.searchParams.get('view');
+let activeView: 'edit' | 'original' | 'mnema' = 'edit';
+if (sourceAttachment?.format === 'docx') {
+  activeView = rawView === 'mnema' ? 'mnema' : 'edit';
+} else if (sourceAttachment?.format === 'pdf') {
+  activeView = rawView === 'original' ? 'original' : 'edit';
+}
+---
+
+{lockedTitle ? (
+  <AppLayout title="Access required" email={auth.email}>
+    <LockedDoc docId={doc_id} title={lockedTitle} client:load />
+  </AppLayout>
+) : (
+  <DocLayout
+    title={doc!.title || 'Untitled'}
+    email={auth.email}
+    backUrl={backUrl}
+    sourceAttachment={sourceAttachment}
+    activeView={activeView}
+    folder={folder}
+  >
+    <DocPage
+      initialDoc={doc!}
+      jwt={auth.jwt}
+      user={{ id: auth.user_id, email: auth.email }}
+      collabUrl={collabUrl}
+      activeView={activeView}
+      client:only="react"
+    />
+  </DocLayout>
+)}

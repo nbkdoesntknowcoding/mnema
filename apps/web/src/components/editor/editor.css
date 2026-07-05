@@ -1,0 +1,640 @@
+/* === Doc page wrapper === */
+.doc-page {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 80px 24px 200px;
+}
+
+.doc-title {
+  width: 100%;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 2.25rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.16;
+  padding: 0;
+  margin: 0 0 24px;
+}
+.doc-title::placeholder {
+  color: var(--text-tertiary);
+}
+
+/* === Editor surface === */
+.editor-shell {
+  position: relative;
+}
+
+.editor-surface {
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.5rem;
+}
+
+.milkdown {
+  background: transparent !important;
+  color: var(--text-primary) !important;
+  font-family: var(--font-sans) !important;
+}
+
+.milkdown .ProseMirror {
+  outline: 0;
+  padding: 0;
+  min-height: 50vh;
+}
+
+.milkdown h1,
+.milkdown h2,
+.milkdown h3,
+.milkdown h4 {
+  color: var(--text-primary);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 32px 0 12px;
+}
+.milkdown h1 { font-size: 1.75rem;  line-height: 2.125rem; }
+.milkdown h2 { font-size: 1.375rem; line-height: 1.75rem; }
+.milkdown h3 { font-size: 1.125rem; line-height: 1.625rem; }
+.milkdown h4 { font-size: 1rem;     line-height: 1.5rem; }
+
+.milkdown p {
+  margin: 8px 0;
+}
+
+.milkdown blockquote {
+  border-left: 2px solid var(--border-default);
+  padding: 4px 0 4px 16px;
+  margin: 12px 0;
+  color: var(--text-secondary);
+}
+
+.milkdown a {
+  color: var(--text-primary);
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+}
+.milkdown a:hover {
+  color: var(--text-primary);
+  text-decoration-color: var(--text-secondary);
+}
+
+.milkdown ul,
+.milkdown ol {
+  padding-left: 24px;
+  margin: 8px 0;
+}
+.milkdown li {
+  margin: 2px 0;
+}
+.milkdown li::marker {
+  color: var(--text-tertiary);
+}
+
+.milkdown hr {
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+  margin: 24px 0;
+}
+
+/* Inline code */
+.milkdown code:not(pre code) {
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  color: var(--text-primary);
+}
+
+/* CodeMirror block */
+.milkdown .cm-editor {
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  padding: 12px 0;
+  margin: 12px 0;
+}
+.milkdown .cm-content {
+  color: var(--text-primary);
+  padding: 0 16px;
+}
+.milkdown .cm-gutters {
+  background: var(--surface-sunken) !important;
+  border-right: 1px solid var(--border-subtle) !important;
+  color: var(--text-tertiary);
+}
+.milkdown .cm-cursor {
+  border-color: var(--text-primary) !important;
+}
+
+/* Slash menu */
+.milkdown-slash-menu,
+.milkdown .milkdown-slash-menu {
+  background: var(--surface-overlay) !important;
+  border: 1px solid var(--border-default) !important;
+  border-radius: 8px !important;
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+  padding: 4px !important;
+  min-width: 240px;
+  color: var(--text-primary);
+}
+.milkdown-slash-menu .menu-item {
+  height: 30px;
+  padding: 0 10px;
+  font-size: 0.875rem;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.milkdown-slash-menu .menu-item:hover,
+.milkdown-slash-menu .menu-item[data-active='true'] {
+  background: var(--interactive-ghost-hover);
+}
+
+/* Selection toolbar — glassmorphism card */
+.milkdown .milkdown-toolbar {
+  /* Glassmorphism */
+  background: color-mix(in srgb, var(--surface-overlay) 72%, transparent) !important;
+  backdrop-filter: blur(16px) saturate(1.4) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(1.4) !important;
+  border: 1px solid color-mix(in srgb, var(--line-strong) 60%, transparent) !important;
+  border-radius: 10px !important;
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.35),
+    0 2px 6px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+  overflow: visible !important;
+
+  /* Wire Crepe's internal color tokens to our palette */
+  --crepe-color-surface: transparent;
+  --crepe-color-outline: var(--text-primary);
+  --crepe-color-hover: var(--interactive-ghost-hover);
+  --crepe-color-selected: var(--interactive-ghost-active);
+  --crepe-color-primary: var(--accent-400, var(--text-primary));
+  --crepe-shadow-1: none;
+}
+
+/* Ensure icons are always the primary text colour */
+.milkdown .milkdown-toolbar .toolbar-item svg {
+  color: var(--text-primary) !important;
+  fill: var(--text-primary) !important;
+  opacity: 0.85;
+}
+.milkdown .milkdown-toolbar .toolbar-item:hover svg {
+  opacity: 1;
+}
+.milkdown .milkdown-toolbar .toolbar-item.active svg {
+  color: var(--text-primary) !important;
+  fill: var(--text-primary) !important;
+  opacity: 1;
+}
+/* Active (toggled-on) item has a tinted background so the state is visible */
+.milkdown .milkdown-toolbar .toolbar-item.active {
+  background: color-mix(in srgb, var(--text-primary) 14%, transparent) !important;
+}
+/* Divider */
+.milkdown .milkdown-toolbar .divider {
+  background: color-mix(in srgb, var(--text-primary) 18%, transparent) !important;
+}
+
+.milkdown ::selection {
+  background: var(--selection-bg);
+}
+
+/* KaTeX */
+.milkdown .math-inline,
+.milkdown .math-display {
+  color: var(--text-primary);
+}
+
+/* === Mermaid block === */
+.mermaid-block {
+  margin: 16px 0;
+  background: var(--surface-base);
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.mermaid-preview {
+  padding: 24px;
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+}
+.mermaid-preview:hover {
+  background: var(--interactive-ghost-hover);
+}
+.mermaid-preview svg {
+  max-width: 100%;
+  height: auto;
+}
+.mermaid-source {
+  margin: 0;
+  padding: 12px 16px;
+  background: var(--surface-sunken);
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  outline: 0;
+}
+.mermaid-empty {
+  color: var(--text-tertiary);
+  font-size: 0.875rem;
+}
+.mermaid-error {
+  color: var(--status-error);
+  font-size: 0.875rem;
+}
+
+/* === Diagram blocks (mermaid + svg) — Build 1 (chrome-free figure) + Build 2 (house-style) ===
+ * A diagram code-block is identified by the rendered preview host class
+ * (.mermaid-preview / .svg-preview), set in plugins/mermaid.tsx. When a diagram
+ * figure is present we suppress the code-block chrome that was overlapping it:
+ *   - .language-picker  — the "mermaid ⌄" button + its language dropdown
+ *                         (the list that z-indexed OVER the figure). Diagrams are
+ *                         fixed-format, so a language switcher is meaningless here.
+ *   - .preview-label / .preview-divider — the "PREVIEW" caption that collided
+ *                         with node text inside the rendered figure.
+ * Pure CSS via :has() — no change to the editor's JS render path, so it cannot
+ * affect any other code block or doc parsing. */
+.milkdown-code-block:has(.mermaid-preview) .language-picker,
+.milkdown-code-block:has(.svg-preview) .language-picker,
+.milkdown-code-block:has(.chart-preview) .language-picker,
+.milkdown-code-block:has(.mermaid-preview) .preview-label,
+.milkdown-code-block:has(.svg-preview) .preview-label,
+.milkdown-code-block:has(.chart-preview) .preview-label,
+.milkdown-code-block:has(.mermaid-preview) .preview-divider,
+.milkdown-code-block:has(.svg-preview) .preview-divider,
+.milkdown-code-block:has(.chart-preview) .preview-divider {
+  display: none;
+}
+
+/* SVG figure — Build 2: previously had NO CSS at all, so a rendered ```svg
+ * fence had zero sizing/centering. Mirror the mermaid figure: centered, padded,
+ * never wider than the column. */
+.svg-preview {
+  padding: 24px;
+  margin: 0;
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.svg-preview:hover {
+  background: var(--interactive-ghost-hover);
+}
+.svg-preview svg,
+.svg-preview img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Shared house-style frame for diagram + chart figures — a clean, token-anchored
+ * card so a figure reads as deliberate output rather than raw code. */
+.milkdown-code-block:has(.mermaid-preview) .preview-panel,
+.milkdown-code-block:has(.svg-preview) .preview-panel,
+.milkdown-code-block:has(.chart-preview) .preview-panel {
+  background: var(--surface-base);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+/* === Chart blocks (Charting Engine — Sprint 1) ===
+ * A ```chart fence renders a Chart.js canvas (plugins/chart.tsx). The canvas needs an
+ * explicitly-sized container (Chart.js responsive + maintainAspectRatio:false). */
+.chart-preview {
+  padding: 20px 24px;
+  margin: 0;
+  cursor: pointer;
+}
+.chart-preview:hover {
+  background: var(--interactive-ghost-hover);
+}
+.chart-canvas-wrap {
+  position: relative;
+  width: 100%;
+  height: 360px;
+}
+.chart-empty {
+  color: var(--text-tertiary);
+  font-size: 0.875rem;
+  padding: 16px;
+}
+.chart-error {
+  color: var(--status-error);
+  font-size: 0.875rem;
+  padding: 16px;
+}
+
+/* Chart figure is a PNG <img> (Chart.js rendered offscreen → toDataURL) — Crepe serializes the
+ * preview to innerHTML, which a live <canvas> can't survive. Size it to the column. */
+.chart-img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
+
+/* === Connection status — now embedded in the bottom-right toolbar (DocPage).
+ *    These classes are kept for the legacy ConnectionStatus component which
+ *    is no longer used as a standalone floating element. === */
+
+/* === Remote cursors (y-prosemirror) === */
+.ProseMirror .ProseMirror-yjs-cursor {
+  position: relative;
+  margin-left: -1px;
+  margin-right: -1px;
+  border-left: 1.5px solid;
+  border-color: currentColor;
+  word-break: normal;
+  pointer-events: none;
+}
+.ProseMirror .ProseMirror-yjs-cursor > div {
+  position: absolute;
+  top: -1.4em;
+  left: -1px;
+  padding: 1px 6px;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  font-family: var(--font-sans);
+  color: var(--text-primary);
+  background: currentColor;
+  border-radius: 3px;
+  white-space: nowrap;
+  user-select: none;
+  pointer-events: none;
+}
+.ProseMirror .ProseMirror-yjs-cursor > div::after {
+  color: white;
+  mix-blend-mode: difference;
+}
+
+/* ============================ Math (inline) ============================ */
+.math-inline {
+  display: inline-block;
+  vertical-align: middle;
+  cursor: text;
+  user-select: none;
+}
+.math-inline-rendered {
+  display: inline-block;
+  padding: 0 2px;
+  border-radius: 3px;
+  color: var(--text-primary);
+}
+.math-inline-rendered:hover {
+  background: var(--interactive-ghost-hover);
+  cursor: pointer;
+}
+.math-inline-input {
+  display: inline-block;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-focus);
+  border-radius: 3px;
+  padding: 1px 6px;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  outline: 0;
+  min-width: 80px;
+}
+.math-inline-rendered.math-empty,
+.math-block-rendered.math-empty {
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+}
+.math-inline-rendered.math-error,
+.math-block-rendered.math-error {
+  color: var(--status-error);
+  font-family: var(--font-mono);
+}
+
+/* KaTeX color overrides for dark mode */
+.math-inline-rendered .katex,
+.math-block-rendered .katex {
+  color: var(--text-primary);
+}
+
+/* ============================ Math (block) ============================= */
+.math-block {
+  margin: 16px 0;
+  border-radius: 8px;
+  background: var(--surface-base);
+  border: 1px solid var(--border-default);
+  overflow: hidden;
+}
+.math-block-rendered {
+  padding: 24px 16px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  min-height: 60px;
+  color: var(--text-primary);
+}
+.math-block-rendered:hover {
+  background: var(--interactive-ghost-hover);
+}
+.math-block-input {
+  display: block;
+  width: 100%;
+  min-height: 80px;
+  padding: 12px 16px;
+  background: var(--surface-sunken);
+  border: 0;
+  border-top: 1px solid var(--border-default);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  outline: 0;
+  resize: vertical;
+}
+.math-block-input:focus {
+  border-top: 0;
+}
+
+/* Hide the bare placeholder elements ProseMirror's toDOM creates */
+.math-inline-placeholder,
+.math-block-placeholder {
+  display: none;
+}
+
+/* Crepe's "virtual cursor" plugin sets `caret-color: transparent` on the
+   editor root (`.virtual-cursor-enabled`) and replaces the OS caret with a
+   JS-drawn DIV using `border-left: 2px solid var(--prosemirror-virtual-cursor-color)`.
+   That CSS variable isn't shipped by Milkdown/Crepe — leaving it undefined
+   makes the border render at 0px width (no cursor). Bind it to our
+   primary text color so it shows up cleanly in both themes. */
+:root {
+  --prosemirror-virtual-cursor-color: var(--text-primary);
+}
+
+/* ============================ Autocomplete ============================ */
+
+.autocomplete-ghost-wrapper {
+  display: inline;
+  pointer-events: none;
+  user-select: none;
+  position: relative;
+}
+
+.autocomplete-ghost-text {
+  color: var(--text-quaternary);
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  white-space: pre-wrap;
+}
+
+.autocomplete-ai-pill {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 4px;
+  font-size: 0.6875rem;            /* matches design system's --text-xs */
+  font-weight: 500;
+  font-family: var(--font-sans);
+  color: var(--text-tertiary);
+  background: var(--surface-overlay);
+  border: 1px solid var(--border-default);
+  border-radius: 3px;
+  vertical-align: 1px;
+  opacity: 0;
+  /* 200ms-delayed fade-in: ghost text appears first, pill follows so it
+     never feels like a centerpiece during transient suggestions. */
+  animation: autocomplete-pill-fade-in 200ms ease-out 200ms forwards;
+}
+
+@keyframes autocomplete-pill-fade-in {
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .autocomplete-ai-pill {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+/* === Phase 4.2 — comment anchor highlights ===
+ *
+ * Source of truth: CommentAnchorPlugin in apps/web/src/components/comments/.
+ * Each open thread paints a Decoration.inline over its anchored range with
+ * the `comment-anchor` class. Multiple overlapping ranges naturally stack
+ * — every additional layer adds the same tint, so deeper overlaps render
+ * slightly darker. The `--active` variant is added when the user hovers
+ * a thread in the sidebar.
+ */
+.milkdown .ProseMirror .comment-anchor {
+  background-color: color-mix(in srgb, var(--text-secondary) 12%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--text-secondary) 35%, transparent);
+  cursor: pointer;
+  transition: background-color 120ms ease-out;
+}
+
+.milkdown .ProseMirror .comment-anchor:hover,
+.milkdown .ProseMirror .comment-anchor.comment-anchor--active {
+  background-color: color-mix(in srgb, var(--text-secondary) 22%, transparent);
+}
+
+/* === Phase 4.2 — doc page toolbar
+ *
+ * Wraps the doc title input and the Comments toggle button on the same
+ * The toolbar is now the fixed bottom-right element; .doc-toolbar no longer exists.
+ */
+
+/* === Phase 4.2 — version diff chunks ===
+ *
+ * Rendered as preformatted lines inside the VersionDiffView overlay.
+ * The semantic colors stay slightly tinted so the diff is still readable
+ * on the dark surface — color-mix lets us reuse the design tokens for
+ * dark/light without forking the palette.
+ */
+.diff-add {
+  background-color: color-mix(in srgb, var(--status-success) 14%, transparent);
+  color: var(--text-primary);
+  padding: 1px 4px;
+  border-radius: 2px;
+}
+
+.diff-remove {
+  background-color: color-mix(in srgb, var(--status-error) 14%, transparent);
+  color: var(--text-secondary);
+  text-decoration: line-through;
+  padding: 1px 4px;
+  border-radius: 2px;
+}
+
+.diff-context {
+  color: var(--text-secondary);
+  padding: 1px 4px;
+}
+
+/* === Phase 4.3 — light-mode editor overrides ===
+ *
+ * Most editor styles already cascade off the design tokens that swap
+ * per theme (see global.css). These overrides catch the few spots that
+ * referenced specific accent ramp stops or used dark-only shadow values.
+ *
+ * Links in the editor:
+ *   Dark uses --accent-300 / --accent-200 (the pale stops) because they
+ *   read well on near-black. On white those stops disappear; bump to
+ *   --accent-500 / --accent-400 for legibility.
+ *
+ * Floating UI shadows:
+ *   The dark slash-menu/toolbar shadow is `rgba(0, 0, 0, 0.5)` which is
+ *   correct on dark surfaces but produces a muddy halo on white. Drop
+ *   the inset highlight (meaningless on white) and weaken the alpha.
+ *
+ * Comment anchors:
+ *   The dark 14%/28% tints look slightly under-saturated on a white
+ *   surface; bumping by ~4-6% restores parity without going neon.
+ */
+:root[data-theme='light'] .milkdown a {
+  color: var(--text-primary);
+  text-decoration-color: var(--border-strong);
+}
+:root[data-theme='light'] .milkdown a:hover {
+  color: var(--text-primary);
+  text-decoration-color: var(--text-secondary);
+}
+
+:root[data-theme='light'] .milkdown-slash-menu,
+:root[data-theme='light'] .milkdown .milkdown-slash-menu {
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.08),
+    0 1px 2px rgba(0, 0, 0, 0.04) !important;
+}
+
+:root[data-theme='light'] .milkdown .milkdown-toolbar {
+  background: color-mix(in srgb, var(--surface-overlay) 80%, transparent) !important;
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.10),
+    0 2px 4px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7) !important;
+}
+
+:root[data-theme='light'] .milkdown .ProseMirror .comment-anchor {
+  background-color: color-mix(in srgb, var(--text-secondary) 16%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--text-secondary) 45%, transparent);
+}
+:root[data-theme='light'] .milkdown .ProseMirror .comment-anchor:hover,
+:root[data-theme='light'] .milkdown .ProseMirror .comment-anchor.comment-anchor--active {
+  background-color: color-mix(in srgb, var(--text-secondary) 28%, transparent);
+}
+

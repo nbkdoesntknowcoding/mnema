@@ -1,0 +1,101 @@
+---
+import { workos } from '../../lib/workos.ts';
+import { setSession, setPendingJoinSession } from '../../lib/session.ts';
+
+const code = Astro.url.searchParams.get('code');
+if (!code) {
+  return Astro.redirect('/login?error=missing_code');
+}
+
+const clientId = (process.env.WORKOS_CLIENT_ID ?? import.meta.env.WORKOS_CLIENT_ID) as string;
+const internalSecret = (process.env.API_INTERNAL_SECRET ?? import.meta.env.API_INTERNAL_SECRET) as string;
+
+let workosResult;
+try {
+  workosResult = await workos.userManagement.authenticateWithCode({
+    code,
+    clientId,
+  });
+} catch (err) {
+  console.error('WorkOS code exchange failed', err);
+  return Astro.redirect('/login?error=code_exchange_failed');
+}
+
+const { user, accessToken } = workosResult;
+const displayName = user.firstName
+  ? `${user.firstName} ${user.lastName ?? ''}`.trim()
+  : null;
+
+const apiUrl = (import.meta.env.PUBLIC_API_URL as string | undefined) ?? 'http://localhost:8080';
+const response = await fetch(`${apiUrl}/api/_internal/set-session`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    internal_secret: internalSecret,
+    email: user.email,
+    display_name: displayName,
+    workos_user_id: user.id,
+  }),
+});
+
+if (!response.ok) {
+  const text = await response.text();
+  console.error('Internal set-session failed', response.status, text);
+  return Astro.redirect('/login?error=bootstrap_failed');
+}
+
+const data = (await response.json()) as
+  | { user_id: string; tenant_id: string; jwt: string }
+  | {
+      needs_workspace_choice: true;
+      user_id: string;
+      email: string;
+      workos_user_id: string;
+      domain_workspaces: Array<{ id: string; name: string; slug: string; member_count: number }>;
+    };
+
+// ── Same-domain workspace detected ────────────────────────────────────────────
+// Store a short-lived pending cookie so the join-or-create page knows who the
+// user is and which workspaces to offer, then let them choose.
+if ('needs_workspace_choice' in data && data.needs_workspace_choice) {
+  await setPendingJoinSession(Astro.cookies, {
+    user_id: data.user_id,
+    email: user.email,
+    display_name: displayName,
+    workos_user_id: user.id,
+    access_token: accessToken,
+    domain_workspaces: data.domain_workspaces,
+  });
+  return Astro.redirect('/auth/join-or-create');
+}
+
+// ── Normal path ───────────────────────────────────────────────────────────────
+const { user_id, tenant_id, jwt } = data as { user_id: string; tenant_id: string; jwt: string };
+await setSession(Astro.cookies, {
+  user_id,
+  email: user.email,
+  tenant_id,
+  workos_user_id: user.id,
+  access_token: accessToken,
+  jwt,
+});
+
+// If the user arrived from an MCP OAuth flow (via /login?oauth_request_id=XXX),
+// bridge them back to the API consent screen instead of going to /app.
+const oauthRequestId = Astro.cookies.get('oauth_request_id')?.value;
+if (oauthRequestId) {
+  Astro.cookies.delete('oauth_request_id', { path: '/' });
+  const resumeUrl = `${apiUrl}/oauth/resume?request_id=${encodeURIComponent(oauthRequestId)}&proof=${encodeURIComponent(jwt)}`;
+  return Astro.redirect(resumeUrl);
+}
+
+// If the user arrived from a ?next= link (e.g. pricing page CTA), send
+// them to the intended destination instead of /app.
+const loginNext = Astro.cookies.get('login_next')?.value;
+if (loginNext && loginNext.startsWith('/')) {
+  Astro.cookies.delete('login_next', { path: '/' });
+  return Astro.redirect(loginNext);
+}
+
+return Astro.redirect('/app');
+---

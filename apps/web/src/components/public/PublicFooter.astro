@@ -1,0 +1,73 @@
+---
+import { ThemeToggle } from '../theme/ThemeToggle';
+---
+
+<footer style="border-top: 1px solid var(--border-subtle);">
+  <div
+    class="max-w-[1100px] mx-auto px-6 py-8 flex items-center justify-between"
+  >
+    <span class="inline-flex items-center gap-2.5">
+      <span
+        class="inline-flex flex-shrink-0 overflow-hidden"
+        style="width: 22px; height: 22px; border-radius: 6px;"
+      >
+        <img src="/logo.svg" width="22" height="22" alt="Mnema" draggable="false" />
+      </span>
+      <span
+        class="font-mono uppercase"
+        style="font-size: 11px; letter-spacing: 0.08em; color: var(--text-tertiary);"
+      >
+        Mnema, by BOPPL
+      </span>
+    </span>
+
+    <div class="flex items-center gap-6">
+      <a
+        href="/docs"
+        class="transition-colors"
+        style="font-size: 12px; color: var(--text-tertiary);"
+        onmouseover="this.style.color='var(--text-secondary)'"
+        onmouseout="this.style.color='var(--text-tertiary)'"
+      >
+        Docs
+      </a>
+      <a
+        href="/app"
+        class="transition-colors"
+        style="font-size: 12px; color: var(--text-tertiary);"
+        onmouseover="this.style.color='var(--text-secondary)'"
+        onmouseout="this.style.color='var(--text-tertiary)'"
+      >
+        Pricing
+      </a>
+      <a
+        href="/privacy"
+        class="transition-colors"
+        style="font-size: 12px; color: var(--text-tertiary);"
+        onmouseover="this.style.color='var(--text-secondary)'"
+        onmouseout="this.style.color='var(--text-tertiary)'"
+      >
+        Privacy
+      </a>
+      <a
+        href="/terms"
+        class="transition-colors"
+        style="font-size: 12px; color: var(--text-tertiary);"
+        onmouseover="this.style.color='var(--text-secondary)'"
+        onmouseout="this.style.color='var(--text-tertiary)'"
+      >
+        Terms
+      </a>
+      <a
+        href="/login"
+        class="transition-colors"
+        style="font-size: 12px; color: var(--text-tertiary);"
+        onmouseover="this.style.color='var(--text-secondary)'"
+        onmouseout="this.style.color='var(--text-tertiary)'"
+      >
+        Sign in
+      </a>
+      <ThemeToggle client:load />
+    </div>
+  </div>
+</footer>

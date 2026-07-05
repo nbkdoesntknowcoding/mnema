@@ -1,0 +1,105 @@
+/* Sidebar — exact replica of Workspace.html reference */
+.sb-aside {
+  background: var(--surface);
+  border-right: 1px solid var(--line);
+  padding: 8px 6px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  height: 100%;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.sb-section { margin-top: 10px; }
+.sb-section:first-child { margin-top: 2px; }
+
+.sb-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px 2px;
+  font: 500 11px/1 var(--mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.sb-section-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  color: var(--ink-muted);
+  text-decoration: none;
+  opacity: 0;
+  transition: opacity 120ms ease, background 120ms ease;
+}
+.sb-section-head:hover .sb-section-action { opacity: 1; }
+.sb-section-action:hover { background: var(--surface-3); color: var(--ink); }
+
+.sb-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  font: 500 13px/1.2 var(--sans);
+  color: var(--ink-soft);
+  user-select: none;
+  text-decoration: none;
+}
+.sb-row:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.sb-row:hover .sb-icon { color: var(--ink-soft); }
+.sb-row.active {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+.sb-row.active .sb-icon { color: var(--accent); }
+
+.sb-l {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.sb-icon {
+  color: var(--ink-muted);
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+}
+.sb-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sb-count {
+  font: 500 12px/1 var(--sans);
+  color: var(--ink-muted);
+  flex-shrink: 0;
+}
+
+.sb-row.indent-1 { padding-left: 22px; }
+.sb-row.indent-2 { padding-left: 36px; }
+
+.sb-foot {
+  margin-top: auto;
+  padding: 10px;
+  border-top: 1px solid var(--line);
+  font: 500 12px/1.3 var(--sans);
+  color: var(--ink-muted);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+}
+.sb-foot:hover { color: var(--ink); }
+.sb-foot .sb-v { color: var(--ink); }

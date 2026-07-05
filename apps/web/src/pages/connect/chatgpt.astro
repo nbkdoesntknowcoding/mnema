@@ -1,0 +1,172 @@
+---
+// Public page — no auth required
+const mcpHttpUrl = 'https://api.example.com/mcp/http';
+const mcpUrl     = 'https://api.example.com/mcp';
+---
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Connect ChatGPT to Mnema</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <script is:inline>
+    (function(){var t=localStorage.getItem('mnema-theme')||'dark';document.documentElement.setAttribute('data-theme',t);})();
+  </script>
+  <style is:global>
+    :root { --sans: 'Geist', system-ui, sans-serif; --mono: 'Geist Mono', monospace; }
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin: 0; font-family: var(--sans); background: var(--canvas, #0a0b0d); color: var(--ink, #e8e9eb); line-height: 1.6; }
+    .cg-wrap { max-width: 780px; margin: 0 auto; padding: 60px 28px 80px; }
+    .cg-brand { display: inline-flex; align-items: center; gap: 8px; text-decoration: none; color: inherit; font: 600 14px/1 var(--sans); margin-bottom: 48px; }
+    .cg-glyph { width: 26px; height: 26px; border-radius: 7px; overflow: hidden; display: inline-flex; }
+    h1 { margin: 0 0 10px; font: 600 30px/1.2 var(--sans); letter-spacing: -0.02em; }
+    .cg-sub { margin: 0 0 48px; font-size: 15px; color: var(--ink-muted, #888); max-width: 36rem; }
+    .cg-section { margin-bottom: 44px; }
+    .cg-section-label {
+      font: 500 10.5px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--ink-muted, #888); margin-bottom: 14px;
+    }
+    h2 { margin: 0 0 10px; font: 500 17px/1.3 var(--sans); }
+    p { margin: 0 0 14px; font-size: 14px; color: var(--ink-soft, #aaa); }
+    ol { margin: 0 0 14px; padding-left: 20px; font-size: 14px; color: var(--ink-soft, #aaa); }
+    ol li { margin-bottom: 6px; }
+    .cg-code-row {
+      display: flex; align-items: stretch;
+      background: var(--surface, #111); border: 1px solid var(--line, #2a2b2d); border-radius: 8px; overflow: hidden;
+      margin-bottom: 8px;
+    }
+    .cg-code {
+      flex: 1; padding: 10px 14px;
+      font: 400 13px/1 var(--mono); color: var(--ink-soft, #aaa);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .cg-copy {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 10px 14px; border: 0; border-left: 1px solid var(--line, #2a2b2d);
+      background: var(--surface-2, #1a1b1d); color: var(--ink-muted, #888);
+      font: 500 11px/1 var(--mono); letter-spacing: 0.04em; cursor: pointer;
+      transition: background 120ms, color 120ms; white-space: nowrap; flex-shrink: 0;
+    }
+    .cg-copy:hover { background: var(--surface-3, #222); color: var(--ink, #e8e9eb); }
+    .cg-copy.copied { color: #6be39b; }
+    pre {
+      margin: 0; padding: 14px 16px; overflow-x: auto;
+      background: var(--surface, #111); border: 1px solid var(--line, #2a2b2d); border-radius: 8px;
+      font: 400 12.5px/1.6 var(--mono); color: var(--ink-soft, #aaa);
+    }
+    .cg-badge {
+      display: inline-block; font: 500 9.5px/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase;
+      padding: 3px 7px; border-radius: 4px;
+      background: rgba(107,227,155,0.10); border: 1px solid rgba(107,227,155,0.28); color: #6be39b;
+      margin-left: 8px; vertical-align: middle;
+    }
+    .cg-badge.pro { background: rgba(96,165,250,0.10); border-color: rgba(96,165,250,0.28); color: #60a5fa; }
+    .cg-badge.api { background: rgba(167,139,250,0.10); border-color: rgba(167,139,250,0.28); color: #a78bfa; }
+    .cg-divider { border: 0; border-top: 1px solid var(--line, #2a2b2d); margin: 32px 0; }
+  </style>
+</head>
+<body>
+<div class="cg-wrap">
+  <a href="/" class="cg-brand">
+    <span class="cg-glyph"><img src="/logo.svg" width="26" height="26" alt="Mnema" /></span>
+    Mnema
+  </a>
+
+  <h1>Connect ChatGPT to Mnema</h1>
+  <p class="cg-sub">
+    Give ChatGPT direct access to your Mnema workspace. It can search docs, walk flows,
+    and manage tasks — right inside the chat.
+  </p>
+
+  <!-- Section 1: ChatGPT Business/Enterprise -->
+  <div class="cg-section">
+    <div class="cg-section-label">Option 1</div>
+    <h2>ChatGPT Business / Enterprise <span class="cg-badge">ADMIN</span></h2>
+    <p>
+      Enterprise admins can add Mnema as a custom MCP connector in the admin panel.
+      All users in the org will then see Mnema as an available tool.
+    </p>
+    <ol>
+      <li>Go to <strong>admin.openai.com → Connectors → Add custom connector</strong></li>
+      <li>Paste the MCP URL below and click <strong>Verify</strong></li>
+      <li>Enter a Bearer token from your <a href="/app/connections/claude" style="color:#60a5fa;">Mnema API keys page</a></li>
+      <li>Save and enable for your org</li>
+    </ol>
+    <div class="cg-code-row">
+      <span class="cg-code" id="url-business">{mcpHttpUrl}</span>
+      <button class="cg-copy" onclick="copyEl('url-business', this)">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        Copy URL
+      </button>
+    </div>
+  </div>
+
+  <hr class="cg-divider" />
+
+  <!-- Section 2: ChatGPT Pro/Plus Developer Mode -->
+  <div class="cg-section">
+    <div class="cg-section-label">Option 2</div>
+    <h2>ChatGPT Pro / Plus <span class="cg-badge pro">DEVELOPER MODE</span></h2>
+    <p>
+      Pro and Plus users can add custom MCP servers in ChatGPT's Developer Mode.
+    </p>
+    <ol>
+      <li>Open ChatGPT → click your avatar → <strong>Settings → Beta features → Developer Mode</strong> (enable it)</li>
+      <li>Go to <strong>Settings → Connections → Add MCP server</strong></li>
+      <li>Enter a name (<code>Mnema</code>) and paste the URL below</li>
+      <li>When prompted for auth, select <strong>Bearer token</strong> and paste your API key</li>
+    </ol>
+    <div class="cg-code-row">
+      <span class="cg-code" id="url-pro">{mcpHttpUrl}</span>
+      <button class="cg-copy" onclick="copyEl('url-pro', this)">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        Copy URL
+      </button>
+    </div>
+  </div>
+
+  <hr class="cg-divider" />
+
+  <!-- Section 3: OpenAI API -->
+  <div class="cg-section">
+    <div class="cg-section-label">Option 3</div>
+    <h2>OpenAI API (Responses API) <span class="cg-badge api">CODE</span></h2>
+    <p>
+      If you're building with the OpenAI API directly, add Mnema as a native MCP tool
+      in your <code>tools</code> array:
+    </p>
+    <pre id="code-snippet">{`const response = await openai.responses.create({
+  model: "gpt-4o",
+  tools: [{
+    type: "mcp",
+    server_label: "mnema",
+    server_url: "${mcpHttpUrl}",
+    headers: { "Authorization": "Bearer YOUR_MNEMA_API_KEY" },
+    require_approval: "never",
+  }],
+  input: "Search Mnema for our authentication architecture.",
+});`}</pre>
+    <button class="cg-copy" style="margin-top:8px;border:1px solid var(--line,#2a2b2d);border-radius:6px;" onclick="copyEl('code-snippet', this)">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      Copy snippet
+    </button>
+    <p style="margin-top:12px;font-size:12.5px;">
+      Get your API key from <a href="/app/connections/claude" style="color:#60a5fa;">Mnema → Connections → Claude</a>.
+      Make sure to enable the <strong>workspace:write</strong> scope if you want ChatGPT to write docs too.
+    </p>
+  </div>
+</div>
+
+<script is:inline>
+  function copyEl(id, btn) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    navigator.clipboard.writeText(el.textContent.trim()).catch(function(){});
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(function(){ btn.classList.remove('copied'); btn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy URL'; }, 1500);
+  }
+</script>
+</body>
+</html>

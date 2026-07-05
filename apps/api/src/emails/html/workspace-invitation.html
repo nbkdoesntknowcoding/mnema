@@ -1,0 +1,114 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+<meta name="color-scheme" content="light" />
+<meta name="supported-color-schemes" content="light" />
+<title>{{inviter_name}} invited you to {{workspace_name}}</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<!--[if mso]>
+<style type="text/css">
+table, td, h1, p, a { font-family: Arial, Helvetica, sans-serif !important; }
+</style>
+<![endif]-->
+<style>
+@media (prefers-color-scheme: dark) {
+      body, .mnema-bg { background-color: #14130F !important; }
+      .mnema-footer, .mnema-footer a { color: #8A8A82 !important; }
+    }
+    @media only screen and (max-width: 600px) {
+      .mnema-card-pad { padding: 32px 24px !important; }
+      .mnema-heading { font-size: 30px !important; line-height: 1.1 !important; }
+      .mnema-stamp-big { font-size: 40px !important; }
+      .mnema-illo { width: 48px !important; height: 48px !important; }
+    }
+</style>
+</head>
+<body class="mnema-bg" style="margin:0;padding:0;background-color:#EDE8E0;font-family:'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;-webkit-font-smoothing:antialiased;-webkit-text-size-adjust:100%;">
+<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:#EDE8E0;opacity:0;">{{inviter_name}} wants you on the team.</div>
+<table role="presentation" class="mnema-bg" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#EDE8E0;">
+  <tr>
+    <td align="center" style="padding:48px 16px;">
+
+      <!-- Brand wordmark -->
+      <table role="presentation" width="520" cellspacing="0" cellpadding="0" border="0" style="max-width:520px;width:100%;">
+        <tr><td style="padding:0 8px 20px 8px;font-family:'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;font-size:14px;font-weight:600;letter-spacing:0.04em;color:#1A1A1A;">
+          <img src="https://mnema.example.com/logo.svg" width="22" height="22" alt="Mnema" style="display:inline-block;vertical-align:middle;border-radius:6px;border:0;margin-right:8px;" /><span style="vertical-align:middle;font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;font-size:14px;font-weight:600;letter-spacing:0.04em;color:#1A1A1A;">Mnema</span>
+        </td></tr>
+      </table>
+
+      <!-- CARD -->
+      <table role="presentation" width="520" cellspacing="0" cellpadding="0" border="0" style="max-width:520px;width:100%;background-color:#F2C4B8;border-radius:20px;">
+        <tr>
+          <td class="mnema-card-pad" style="padding:40px 40px 36px 40px;">
+
+            <!-- header row: illo + stamp -->
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+              <tr>
+                <td valign="top" align="left" class="mnema-illo" style="width:56px;height:56px;line-height:0;">
+                  <img src="https://mnema.example.com/email-icons/invitation.svg" width="56" height="56" alt="invitation" style="display:block;border:0;" />
+                </td>
+                
+              </tr>
+            </table>
+
+            <!-- spacer -->
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr><td height="56" style="height:56px;font-size:0;line-height:0;">&nbsp;</td></tr></table>
+
+            <!-- heading -->
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+              <tr><td>
+                <h1 class="mnema-heading" style="margin:0;padding:0;font-family:'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;font-size:36px;line-height:1.1;font-weight:700;letter-spacing:-0.02em;color:#1A1A1A;">You've been invited.</h1>
+              </td></tr>
+              <tr><td style="padding:20px 0 16px 0;font-family:'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;font-size:16px;line-height:1.55;color:#1A1A1A;font-weight:400;">
+                <strong>{{inviter_name}}</strong> has added you to <strong>{{workspace_name}}</strong> on Mnema. Your access is pre-configured — accept to join.
+              </td></tr>
+              <tr><td style="padding:0 0 28px 0;font-family:'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;font-size:14px;line-height:1.7;color:#4A4A44;font-weight:400;">
+                Your role: <strong>{{role_name}}</strong><br/>Your team: <strong>{{team_name}}</strong>
+              </td></tr>
+
+              <tr><td style="padding:0 0 4px 0;">
+                <!-- CTA button (table-based for Outlook) -->
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                  <tr>
+                    <td align="center" style="background-color:#1A1A1A;border-radius:999px;mso-padding-alt:14px 26px;">
+                      <!--[if mso]>
+                        <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{accept_url}}" style="height:48px;v-text-anchor:middle;width:240px;" arcsize="50%" stroke="f" fillcolor="#1A1A1A">
+                          <w:anchorlock/>
+                          <center style="color:#FFFFFF;font-family:Arial,sans-serif;font-size:15px;font-weight:600;">Accept Invitation &rarr;</center>
+                        </v:roundrect>
+                      <![endif]-->
+                      <!--[if !mso]><!-- -->
+                      <a href="{{accept_url}}" style="display:inline-block;padding:14px 26px;font-family:'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;font-size:15px;font-weight:600;line-height:1;color:#FFFFFF;text-decoration:none;border-radius:999px;">
+                        Accept Invitation &rarr;
+                      </a>
+                      <!--<![endif]-->
+                    </td>
+                  </tr>
+                </table>
+              </td></tr>
+              
+    <tr><td style="padding:20px 0 0 0;font-family:'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;font-size:14px;line-height:1.5;color:#6E6E68;">
+      This invite expires in 7 days.
+    </td></tr>
+            </table>
+
+          </td>
+        </tr>
+      </table>
+
+      <!-- footer -->
+      <table role="presentation" width="520" cellspacing="0" cellpadding="0" border="0" style="max-width:520px;width:100%;">
+        <tr><td align="center" class="mnema-footer" style="padding:28px 16px 8px 16px;font-family:'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;font-size:12px;line-height:1.6;color:#8A8A82;">
+          Mnema · <a href="https://example.com" style="color:#8A8A82;text-decoration:none;">example.com</a> · <a href="{{unsubscribe_url}}" style="color:#8A8A82;text-decoration:underline;">Unsubscribe</a>
+        </td></tr>
+      </table>
+
+    </td>
+  </tr>
+</table>
+</body>
+</html>

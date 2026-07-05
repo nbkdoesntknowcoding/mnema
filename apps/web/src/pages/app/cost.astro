@@ -1,0 +1,10 @@
+---
+import AppLayout from '../../layouts/AppLayout.astro';
+import { CostDashboard } from '../../components/dev/CostDashboard';
+
+const auth = Astro.locals.auth;
+if (!auth) return Astro.redirect('/auth/login');
+---
+<AppLayout title="Cost Intelligence">
+  <CostDashboard client:load />
+</AppLayout>

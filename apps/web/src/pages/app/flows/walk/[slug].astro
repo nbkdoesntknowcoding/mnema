@@ -1,0 +1,389 @@
+---
+import AppLayout from '../../../../layouts/AppLayout.astro';
+
+const auth = Astro.locals.auth;
+if (!auth) {
+  return Astro.redirect('/auth/login');
+}
+
+const { slug } = Astro.params;
+
+const apiUrl = (import.meta.env.PUBLIC_API_URL as string | undefined) ?? 'http://localhost:8080';
+
+interface FlowStep {
+  id: string;
+  title: string;
+  kind: string;
+  instruction?: string | null;
+  content?: string | null;
+  source?: string | null;
+  order: number;
+}
+
+interface Flow {
+  id: string;
+  name: string;
+  slug: string;
+  status: string;
+  steps?: FlowStep[];
+}
+
+let flow: Flow | null = null;
+let steps: FlowStep[] = [];
+
+try {
+  const res = await fetch(`${apiUrl}/api/flows/${slug}`, {
+    headers: { Cookie: `boppl_jwt=${auth.jwt}` },
+  });
+  if (res.ok) {
+    const body = (await res.json()) as { flow: Flow };
+    flow = body.flow;
+    steps = flow?.steps ?? [];
+  }
+} catch {
+  /* API offline */
+}
+
+const flowName = flow?.name ?? 'Flow';
+const isPublished = flow?.status === 'published';
+
+const domainPart = auth.email?.split('@')[1]?.split('.')[0] ?? '';
+const workspaceName = domainPart
+  ? domainPart.charAt(0).toUpperCase() + domainPart.slice(1)
+  : 'Workspace';
+---
+
+<style>
+  /* WALK MODAL OVERLAY */
+  .fw-overlay {
+    position: fixed; inset: 0;
+    background: rgba(10,11,13,0.80);
+    backdrop-filter: blur(8px) saturate(140%);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 50;
+    animation: fw-fade 180ms ease;
+  }
+  @keyframes fw-fade { from { opacity: 0; } to { opacity: 1; } }
+
+  .fw-modal {
+    width: 100%; max-width: 768px; max-height: 85vh;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    box-shadow:
+      0 30px 80px -30px rgba(0,0,0,0.7),
+      0 0 0 1px rgba(255,255,255,0.04),
+      inset 0 1px 0 rgba(255,255,255,0.06);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    animation: fw-pop 220ms cubic-bezier(0.16,1,0.3,1);
+    margin: 24px;
+  }
+  @keyframes fw-pop {
+    from { opacity: 0; transform: scale(0.96) translateY(8px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+  }
+
+  /* HEADER */
+  .fw-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 22px; height: 56px;
+    border-bottom: 1px solid var(--line);
+    flex-shrink: 0;
+  }
+  .fw-head .left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .fw-head .label {
+    font: 500 10px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--ink-muted);
+  }
+  .fw-head .flow-name { font: 500 14px/1 var(--sans); color: var(--ink); }
+  .fw-step-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 9px 4px 8px; border-radius: 999px;
+    background: var(--accent-soft); border: 1px solid var(--accent-line);
+    color: var(--accent); font: 500 11px/1 var(--mono); letter-spacing: 0.02em;
+  }
+  .fw-step-pill .dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+  .fw-close {
+    width: 28px; height: 28px; border-radius: 6px;
+    background: transparent; border: 0;
+    color: var(--ink-muted); cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .fw-close:hover { background: var(--surface-2); color: var(--ink); }
+
+  /* PROGRESS */
+  .fw-progress { display: flex; gap: 4px; padding: 8px 22px 0; flex-shrink: 0; }
+  .fw-progress .seg { flex: 1; height: 2px; border-radius: 2px; background: var(--surface-2); }
+  .fw-progress .seg.done { background: var(--accent); }
+  .fw-progress .seg.current { background: var(--accent); }
+
+  /* BODY */
+  .fw-body { flex: 1; overflow-y: auto; padding: 22px 26px 24px; }
+
+  .fw-eyebrow {
+    display: flex; align-items: center; gap: 9px;
+    font: 500 10.5px/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--ink-muted); margin-bottom: 10px;
+  }
+  .fw-eyebrow .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .fw-eyebrow .kind-doc { background: var(--ink-soft); }
+  .fw-eyebrow .kind-docs { background: var(--ink-soft); }
+  .fw-eyebrow .kind-instruction { background: var(--ink-faint); }
+  .fw-eyebrow .kind-decision { background: var(--status-edit); }
+
+  .fw-title {
+    font: 500 18px/1.3 var(--sans); letter-spacing: -0.01em;
+    color: var(--ink); margin: 0 0 18px;
+  }
+
+  .fw-sec-label {
+    font: 500 10.5px/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--ink-muted); margin: 0 0 8px;
+    display: flex; align-items: center; gap: 8px;
+  }
+
+  .fw-instr {
+    background: var(--sunken); border: 1px solid var(--line);
+    border-radius: 8px; padding: 14px 16px; margin-bottom: 20px;
+  }
+  .fw-instr .instr-label {
+    font: 500 10.5px/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--accent); margin-bottom: 8px;
+  }
+  .fw-instr p { margin: 0; font: italic 400 13.5px/1.6 var(--sans); color: var(--ink); }
+
+  .fw-content { font: 400 13.5px/1.65 var(--sans); color: var(--ink-soft); white-space: pre-wrap; }
+  .fw-content p { margin: 0 0 12px; }
+  .fw-content p:last-child { margin: 0; }
+  .fw-content h4 { font: 500 14px/1.4 var(--sans); color: var(--ink); margin: 14px 0 8px; }
+  .fw-content code {
+    font: 500 12px/1 var(--mono); padding: 1px 6px;
+    background: var(--surface-2); border: 1px solid var(--line);
+    border-radius: 4px; color: var(--ink);
+  }
+
+  .fw-attribution {
+    margin-top: 14px; font: 500 11px/1 var(--mono);
+    color: var(--ink-faint); letter-spacing: 0.02em;
+  }
+  .fw-attribution .source { color: var(--ink-muted); }
+
+  .fw-state {
+    display: none; flex-direction: column; align-items: center;
+    text-align: center; padding: 56px 24px;
+    color: var(--ink-muted); font-size: 13px;
+  }
+  .fw-state.active { display: flex; }
+  .fw-state .spinner {
+    width: 22px; height: 22px; border: 2px solid var(--line-strong);
+    border-top-color: var(--accent); border-radius: 50%;
+    animation: fw-spin 0.8s linear infinite; margin-bottom: 14px;
+  }
+  @keyframes fw-spin { to { transform: rotate(360deg); } }
+
+  /* FOOTER */
+  .fw-foot {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 22px; height: 56px;
+    border-top: 1px solid var(--line);
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+  .fw-foot .nav { display: flex; gap: 8px; }
+  .fw-foot-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 7px 12px; border-radius: 6px;
+    background: var(--surface-2); border: 1px solid var(--line);
+    color: var(--ink); cursor: pointer; font: 500 12.5px/1 var(--sans);
+  }
+  .fw-foot-btn:hover:not([disabled]) { background: var(--surface-3); border-color: var(--line-strong); }
+  .fw-foot-btn[disabled] { opacity: 0.4; cursor: not-allowed; }
+  .fw-foot-btn.ghost { background: transparent; border-color: transparent; color: var(--ink-soft); }
+  .fw-foot-btn.ghost:hover:not([disabled]) { background: var(--surface-2); color: var(--ink); }
+  .fw-foot-btn.copied {
+    background: rgba(107,227,155,0.10); border-color: rgba(107,227,155,0.30);
+    color: var(--status-sync);
+  }
+
+  .fw-kbd-hint {
+    font: 500 10px/1 var(--mono); letter-spacing: 0.04em;
+    color: var(--ink-faint); display: inline-flex; align-items: center; gap: 6px;
+    margin-right: 12px;
+  }
+  .fw-kbd-hint kbd {
+    padding: 2px 5px; border-radius: 3px;
+    background: var(--surface-2); border: 1px solid var(--line);
+    color: var(--ink-muted); font: 500 9.5px/1 var(--mono);
+  }
+
+  /* EMPTY STATE (no steps) */
+  .fw-no-steps {
+    display: flex; flex-direction: column; align-items: center;
+    text-align: center; padding: 56px 24px; color: var(--ink-muted);
+  }
+  .fw-no-steps h3 { margin: 0 0 8px; font: 500 16px/1.3 var(--sans); color: var(--ink); }
+  .fw-no-steps p { margin: 0; font-size: 13px; line-height: 1.55; max-width: 24rem; }
+</style>
+
+<AppLayout title={`Walk · ${flowName} — Mnema`} workspaceName={workspaceName} email={auth.email}>
+
+  <Fragment slot="status-left">
+    <span style="font:500 11px/1 var(--mono);color:var(--ink-muted);">{steps.length} steps</span>
+  </Fragment>
+
+  <!-- Background: just a canvas hint so there's something behind the modal -->
+  <div style="height:100%;display:flex;align-items:center;justify-content:center;background:var(--sunken);position:relative;overflow:hidden;">
+    <div style="position:absolute;inset:0;background-image:radial-gradient(circle,rgba(255,255,255,0.06) 1px,transparent 1px);background-size:16px 16px;"></div>
+    <div style="position:relative;text-align:center;color:var(--ink-muted);font:500 13px/1.5 var(--sans);">
+      <a href="/app/flows" style="color:var(--ink-soft);text-decoration:none;display:inline-flex;align-items:center;gap:6px;">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m15 18-6-6 6-6"/></svg>
+        Back to flows
+      </a>
+    </div>
+  </div>
+
+  <!-- MODAL -->
+  <div class="fw-overlay" id="fw-overlay" role="dialog" aria-modal="true">
+    <div class="fw-modal">
+
+      <header class="fw-head">
+        <div class="left">
+          <span class="label">WALK THIS FLOW</span>
+          <span class="flow-name">{flowName}</span>
+          <span class="fw-step-pill">
+            <span class="dot"></span>Step <span id="fw-step-n">1</span> of <span id="fw-step-m">{steps.length || 1}</span>
+          </span>
+        </div>
+        <a href="/app/flows" class="fw-close" title="Close · Esc">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </a>
+      </header>
+
+      <div class="fw-progress" id="fw-progress"></div>
+
+      <div class="fw-body" id="fw-body">
+        {steps.length === 0 ? (
+          <div class="fw-no-steps">
+            <h3>No steps yet</h3>
+            <p>This flow doesn't have any steps. Add steps in the flow editor to walk through them here.</p>
+          </div>
+        ) : (
+          <div id="fw-step-content"></div>
+        )}
+      </div>
+
+      <footer class="fw-foot">
+        <div class="nav">
+          <button class="fw-foot-btn" id="fw-prev" disabled>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m15 18-6-6 6-6"/></svg>
+            Previous
+          </button>
+          <button class="fw-foot-btn" id="fw-next" disabled={steps.length <= 1}>
+            Next
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m9 18 6-6-6-6"/></svg>
+          </button>
+        </div>
+        <div style="display:flex;align-items:center;">
+          <span class="fw-kbd-hint"><kbd>←</kbd><kbd>→</kbd> step · <kbd>Esc</kbd> close</span>
+          <button class="fw-foot-btn ghost" id="fw-copy">
+            <svg id="fw-copy-ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            <span id="fw-copy-label">Copy step</span>
+          </button>
+        </div>
+      </footer>
+
+    </div>
+  </div>
+
+</AppLayout>
+
+<script define:vars={{ steps }}>
+let idx = 0;
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function renderContent(text) {
+  return text.split(/\n\n+/).map(block => {
+    const html = escHtml(block).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\n/g, '<br/>');
+    return `<p>${html}</p>`;
+  }).join('');
+}
+
+function render() {
+  if (!steps || steps.length === 0) return;
+  const step = steps[idx];
+  document.getElementById('fw-step-n').textContent = String(idx + 1);
+  document.getElementById('fw-step-m').textContent = String(steps.length);
+  document.getElementById('fw-prev').disabled = idx === 0;
+  document.getElementById('fw-next').disabled = idx === steps.length - 1;
+
+  const kind = (step.kind || 'DOC').toUpperCase();
+  const kindClass = 'kind-' + (step.kind || 'doc').toLowerCase();
+  const body = document.getElementById('fw-step-content');
+  if (!body) return;
+  body.innerHTML = `
+    <div class="fw-eyebrow"><span class="dot ${kindClass}"></span>STEP ${String(idx+1).padStart(2,'0')} · ${kind}</div>
+    <h2 class="fw-title">${escHtml(step.title || 'Untitled')}</h2>
+    ${step.instruction ? `
+      <div class="fw-instr">
+        <div class="instr-label">INSTRUCTION (READ FIRST)</div>
+        <p>${escHtml(step.instruction)}</p>
+      </div>
+    ` : ''}
+    ${step.content ? `
+      <div class="fw-sec-label">CONTENT</div>
+      <div class="fw-content">${renderContent(step.content)}</div>
+      ${step.source ? `<div class="fw-attribution">source: <span class="source">${escHtml(step.source)}</span></div>` : ''}
+    ` : ''}
+  `;
+
+  // Progress
+  const progress = document.getElementById('fw-progress');
+  if (progress) {
+    progress.innerHTML = steps.map((_, i) => {
+      let cls = 'upcoming';
+      if (i < idx) cls = 'done';
+      else if (i === idx) cls = 'current';
+      return `<span class="seg ${cls}"></span>`;
+    }).join('');
+  }
+
+  document.getElementById('fw-body').scrollTop = 0;
+  resetCopy();
+}
+
+function resetCopy() {
+  const btn = document.getElementById('fw-copy');
+  if (btn) btn.classList.remove('copied');
+  const lbl = document.getElementById('fw-copy-label');
+  if (lbl) lbl.textContent = 'Copy step';
+  const ic = document.getElementById('fw-copy-ic');
+  if (ic) ic.outerHTML = '<svg id="fw-copy-ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+}
+
+document.getElementById('fw-prev')?.addEventListener('click', () => { if (idx > 0) { idx--; render(); } });
+document.getElementById('fw-next')?.addEventListener('click', () => { if (steps && idx < steps.length - 1) { idx++; render(); } });
+
+document.getElementById('fw-copy')?.addEventListener('click', () => {
+  if (!steps || !steps[idx]) return;
+  const step = steps[idx];
+  const text = `STEP ${idx+1} · ${(step.kind||'DOC').toUpperCase()} — ${step.title}\n\n${step.instruction ? 'INSTRUCTION:\n' + step.instruction + '\n\n' : ''}${step.content || ''}${step.source ? '\n\nsource: ' + step.source : ''}`;
+  try { navigator.clipboard.writeText(text); } catch(e) {}
+  const btn = document.getElementById('fw-copy');
+  if (btn) btn.classList.add('copied');
+  const lbl = document.getElementById('fw-copy-label');
+  if (lbl) lbl.textContent = 'Copied';
+  setTimeout(resetCopy, 1500);
+});
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') window.location.href = '/app/flows';
+  if (e.key === 'ArrowRight' && steps && idx < steps.length - 1) { idx++; render(); }
+  if (e.key === 'ArrowLeft' && idx > 0) { idx--; render(); }
+});
+
+if (steps && steps.length > 0) render();
+</script>

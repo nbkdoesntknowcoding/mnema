@@ -1,0 +1,11 @@
+---
+import AppLayout from '../../layouts/AppLayout.astro';
+import { ProjectsPage } from '../../components/projects/ProjectsPage';
+
+const auth = Astro.locals.auth;
+if (!auth) return Astro.redirect('/auth/login');
+---
+
+<AppLayout title="Projects">
+  <ProjectsPage client:load />
+</AppLayout>

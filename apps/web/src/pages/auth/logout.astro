@@ -1,0 +1,11 @@
+---
+import { clearSession } from '../../lib/session.ts';
+
+clearSession(Astro.cookies);
+
+// Support ?next so callers (e.g. the invite page) can send the user back
+// to a specific page after sign-out instead of the homepage.
+const nextParam = Astro.url.searchParams.get('next');
+const safeNext = nextParam && nextParam.startsWith('/') ? nextParam : '/';
+return Astro.redirect(safeNext);
+---

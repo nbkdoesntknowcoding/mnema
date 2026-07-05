@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /app/
+Disallow: /api/
+Disallow: /onboarding/
+
+Sitemap: https://mnema.example.com/sitemap-index.xml

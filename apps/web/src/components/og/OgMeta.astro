@@ -1,0 +1,35 @@
+---
+/**
+ * OpenGraph + Twitter card meta tags.
+ *
+ * The OG image is a static SVG today (Phase 5 polish replaces it with a
+ * real PNG once we have a finished design + product screenshots). The
+ * canonical URL is built from PUBLIC_SITE_URL so local previews don't
+ * accidentally claim the production domain.
+ */
+interface Props {
+  title: string;
+  description: string;
+  /** Path relative to PUBLIC_SITE_URL, e.g. "/" or "/pricing". */
+  pathname: string;
+  /** Absolute URL or site-relative path. Defaults to /og-card.svg. */
+  image?: string;
+}
+
+const { title, description, pathname, image = '/og-card.svg' } = Astro.props;
+
+const base = (import.meta.env.PUBLIC_SITE_URL as string | undefined) ?? 'http://localhost:5173';
+const url = `${base}${pathname}`;
+const fullImage = image.startsWith('http') ? image : `${base}${image}`;
+---
+<meta property="og:title" content={title} />
+<meta property="og:description" content={description} />
+<meta property="og:image" content={fullImage} />
+<meta property="og:url" content={url} />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Mnema" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content={title} />
+<meta name="twitter:description" content={description} />
+<meta name="twitter:image" content={fullImage} />
+<link rel="canonical" href={url} />

@@ -1,0 +1,42 @@
+---
+import SettingsLayout from '../../../layouts/SettingsLayout.astro';
+import { AccountSettings } from '../../../components/settings/AccountSettings';
+
+const auth = Astro.locals.auth;
+if (!auth) {
+  return Astro.redirect('/auth/login');
+}
+
+// Fetch display_name from /api/auth/me. Wrapped in try/catch so a bad
+// PUBLIC_API_URL on a fresh deploy doesn't crash the SSR page — the UI
+// degrades gracefully to "Not set".
+const apiUrl =
+  (import.meta.env.PUBLIC_API_URL as string | undefined) ?? 'http://localhost:8080';
+
+interface Me {
+  user?: { id: string; email: string; displayName?: string };
+  workspace?: { name?: string };
+  role?: string;
+}
+
+let displayName: string | null = null;
+try {
+  const meRes = await fetch(`${apiUrl}/api/auth/me`, {
+    headers: { Cookie: `boppl_jwt=${auth.jwt}` },
+  });
+  if (meRes.ok) {
+    const body = (await meRes.json()) as Me;
+    displayName = body.user?.displayName ?? null;
+  }
+} catch {
+  // API unreachable (e.g. local dev with API off, or wrong env var) — ignore.
+}
+---
+
+<SettingsLayout title="Account">
+  <p style="font:500 11px/1 var(--mono);letter-spacing:0.08em;text-transform:uppercase;color:var(--ink-muted);margin:0 0 12px;">Settings</p>
+  <h1 style="margin:0;font:500 28px/1.15 var(--sans);letter-spacing:-0.02em;color:var(--ink);">Account</h1>
+  <p style="margin:6px 0 36px;font-size:14px;color:var(--ink-soft);max-width:36rem;">Your identity across Mnema.</p>
+
+  <AccountSettings client:load email={auth.email} displayName={displayName} />
+</SettingsLayout>

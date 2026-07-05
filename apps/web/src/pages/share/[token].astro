@@ -1,0 +1,120 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { PublicDocViewer } from '../../components/editor/PublicDocViewer';
+
+const { token } = Astro.params;
+if (!token) {
+  return new Response('Not found', { status: 404 });
+}
+
+const apiUrl =
+  (import.meta.env.PUBLIC_API_URL as string | undefined) ?? 'http://localhost:8080';
+
+const response = await fetch(`${apiUrl}/api/docs/public/${token}`);
+
+if (response.status === 404) {
+  return new Response('This document is not available or the link has been disabled.', {
+    status: 404,
+    headers: { 'Content-Type': 'text/plain' },
+  });
+}
+if (!response.ok) {
+  return new Response('Failed to load document', { status: 500 });
+}
+
+const { doc } = (await response.json()) as {
+  doc: { id: string; title: string; markdown: string; updated_at: string };
+};
+---
+
+<BaseLayout title={`${doc.title || 'Untitled'} — Mnema`}>
+  <!-- Top bar -->
+  <div
+    style="
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 52px;
+      background: var(--surface-elevated);
+      border-bottom: 1px solid var(--border-default);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      z-index: 50;
+    "
+  >
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <a
+        href="/"
+        style="
+          font-size: 15px;
+          font-weight: 700;
+          color: var(--text-primary);
+          text-decoration: none;
+          letter-spacing: -0.02em;
+        "
+      >
+        Mnema
+      </a>
+      <span style="color: var(--border-default); font-size: 14px;">/</span>
+      <span
+        style="
+          font-size: 14px;
+          color: var(--text-secondary);
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          max-width: 400px;
+        "
+      >
+        {doc.title || 'Untitled'}
+      </span>
+    </div>
+    <span
+      style="
+        font-size: 11px;
+        font-weight: 500;
+        color: var(--text-tertiary);
+        background: var(--surface-base);
+        border: 1px solid var(--border-default);
+        border-radius: 4px;
+        padding: 2px 8px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      "
+    >
+      Read only
+    </span>
+  </div>
+
+  <!-- Doc title -->
+  <div
+    style="
+      padding: 80px 0 0;
+      max-width: 720px;
+      margin: 0 auto;
+    "
+  >
+    <h1
+      class="font-sans"
+      style="
+        font-size: 32px;
+        font-weight: 700;
+        color: var(--text-primary);
+        letter-spacing: -0.03em;
+        line-height: 1.2;
+        margin: 0 0 8px;
+        padding: 24px 24px 0;
+      "
+    >
+      {doc.title || 'Untitled'}
+    </h1>
+
+    <!-- Editor body -->
+    <div style="padding: 0 0 80px;">
+      <PublicDocViewer markdown={doc.markdown} client:only="react" />
+    </div>
+  </div>
+</BaseLayout>

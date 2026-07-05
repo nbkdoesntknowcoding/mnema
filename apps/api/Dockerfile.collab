@@ -1,0 +1,43 @@
+# Same build stage as the main API — single tsc run builds everything
+FROM node:22-alpine AS builder
+
+RUN corepack enable && corepack prepare pnpm@10.23.0 --activate
+
+WORKDIR /app
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/schema/package.json ./packages/schema/
+COPY packages/schema/tsconfig.json ./packages/schema/
+COPY apps/api/package.json ./apps/api/
+
+RUN pnpm install --frozen-lockfile
+
+COPY packages/ ./packages/
+COPY apps/api/ ./apps/api/
+COPY tsconfig.base.json ./
+
+RUN pnpm --filter @boppl/schema build && pnpm --filter @boppl/api build
+
+FROM node:22-alpine AS runner
+
+RUN corepack enable && corepack prepare pnpm@10.23.0 --activate
+
+WORKDIR /app
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/schema/package.json ./packages/schema/
+COPY packages/schema/tsconfig.json ./packages/schema/
+COPY apps/api/package.json ./apps/api/
+
+RUN pnpm install --frozen-lockfile --prod
+
+COPY --from=builder /app/apps/api/dist ./apps/api/dist
+COPY --from=builder /app/packages/shared ./packages/shared
+COPY --from=builder /app/packages/schema/dist ./packages/schema/dist
+
+EXPOSE 1234
+ENV NODE_ENV=production
+
+CMD ["node", "apps/api/dist/collab/server.js"]

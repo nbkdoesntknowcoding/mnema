@@ -1,0 +1,35 @@
+---
+import AppLayout from '../../layouts/AppLayout.astro';
+import { KanbanBoard } from '../../components/dev/KanbanBoard';
+
+const auth = Astro.locals.auth;
+if (!auth) {
+  return Astro.redirect('/auth/login');
+}
+
+// Check workspace mode — gate Kanban to dev_project workspaces
+const apiUrl = (import.meta.env.PUBLIC_API_URL as string | undefined) ?? 'http://localhost:8080';
+let workspaceMode: string | null = null;
+try {
+  const res = await fetch(`${apiUrl}/api/workspaces/${auth.tenant_id}/dev-config`, {
+    headers: { Cookie: `boppl_jwt=${auth.jwt}` },
+  });
+  if (res.ok) {
+    const body = (await res.json()) as { mode: string };
+    workspaceMode = body.mode;
+  }
+} catch {
+  /* API offline — show the board anyway */
+}
+
+if (workspaceMode === 'knowledge') {
+  return Astro.redirect('/app/content');
+}
+---
+
+<AppLayout title="Kanban">
+  <KanbanBoard
+    workspaceId={auth.tenant_id}
+    client:load
+  />
+</AppLayout>

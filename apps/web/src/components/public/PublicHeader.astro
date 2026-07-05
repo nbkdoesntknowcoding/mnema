@@ -1,0 +1,78 @@
+---
+const auth = Astro.locals.auth;
+const pathname = Astro.url.pathname;
+
+const navLinks = [
+  { href: '/docs', label: 'Docs' },
+  { href: '/pricing', label: 'Pricing' },
+];
+---
+
+<header
+  class="fixed top-0 left-0 right-0 z-50 h-[60px] flex items-center"
+  style="border-bottom: 1px solid var(--border-subtle); background: var(--surface-base);"
+>
+  <div class="max-w-[1100px] mx-auto px-6 w-full flex items-center justify-between">
+    <a
+      href="/"
+      class="inline-flex items-center gap-2.5 select-none"
+      style="color: var(--text-primary);"
+    >
+      <span
+        class="inline-flex flex-shrink-0 overflow-hidden"
+        style="width: 26px; height: 26px; border-radius: 7px;"
+      >
+        <img src="/logo.svg" width="26" height="26" alt="Mnema" draggable="false" />
+      </span>
+      <span style="font-size: 17px; font-weight: 500; letter-spacing: -0.01em;">Mnema</span>
+    </a>
+
+    <!-- Nav with pill active state -->
+    <nav class="flex items-center gap-1">
+      {navLinks.map(({ href, label }) => {
+        const isActive = pathname === href || pathname.startsWith(href + '/');
+        return (
+          <a
+            href={href}
+            class="inline-flex items-center px-2.5 h-7 transition-[background,color] rounded select-none"
+            style={
+              isActive
+                ? `font-size: 13px; background: var(--surface-overlay); color: var(--text-primary); border-radius: var(--radius-md);`
+                : `font-size: 13px; color: var(--text-tertiary); border-radius: var(--radius-md);`
+            }
+            onmouseover={!isActive ? "this.style.color='var(--text-primary)'" : ''}
+            onmouseout={!isActive ? "this.style.color='var(--text-tertiary)'" : ''}
+          >
+            {label}
+          </a>
+        );
+      })}
+    </nav>
+
+    <div class="flex items-center gap-2">
+      {auth ? (
+        <a
+          href="/app"
+          class="inline-flex items-center justify-center h-7 px-2.5 font-medium transition-[background] rounded select-none"
+          style="font-size: 12px; background: var(--interactive-primary); color: var(--interactive-primary-fg); border-radius: var(--radius-md);"
+          onmouseover="this.style.background='var(--interactive-primary-hover)'"
+          onmouseout="this.style.background='var(--interactive-primary)'"
+        >
+          Open app
+        </a>
+      ) : (
+        <a
+          href="/auth/local"
+          class="inline-flex items-center justify-center h-7 px-2.5 font-medium transition-[background] rounded select-none"
+          style="font-size: 12px; background: var(--interactive-primary); color: var(--interactive-primary-fg); border-radius: var(--radius-md);"
+          onmouseover="this.style.background='var(--interactive-primary-hover)'"
+          onmouseout="this.style.background='var(--interactive-primary)'"
+        >
+          Join the waitlist
+        </a>
+      )}
+    </div>
+  </div>
+</header>
+
+<div class="h-[60px]"></div>

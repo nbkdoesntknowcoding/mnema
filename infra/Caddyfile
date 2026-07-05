@@ -1,0 +1,44 @@
+# Cloudflare proxies TLS — Caddy only needs to handle HTTP on port 80.
+# CF orange-cloud → VPS:80 → Caddy → internal services.
+
+http://api.example.com {
+    encode gzip
+    reverse_proxy api:8080 {
+        health_uri    /health
+        health_interval 15s
+    }
+    log {
+        output stdout
+        format console
+    }
+}
+
+http://collab.example.com {
+    reverse_proxy collab:1234
+    log {
+        output stdout
+        format console
+    }
+}
+
+http://docs.example.com {
+    reverse_proxy onlyoffice:80 {
+        header_up Host {host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+    log {
+        output stdout
+        format console
+    }
+}
+
+# Public WebSocket ingress for the Recall meeting bot: Recall streams mixed meeting
+# audio here → pipecat-meeting (which must be attached to this Caddy network).
+# Requires a Cloudflare DNS record for meet-ws.example.com (orange-cloud).
+http://meet-ws.example.com {
+    reverse_proxy pipecat-meeting:8765
+    log {
+        output stdout
+        format console
+    }
+}

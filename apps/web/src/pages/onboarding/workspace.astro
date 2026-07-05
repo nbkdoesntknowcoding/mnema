@@ -1,0 +1,1040 @@
+---
+import '../../styles/global.css';
+
+const auth = Astro.locals.auth;
+if (!auth) {
+  return Astro.redirect('/auth/login');
+}
+
+const apiUrl =
+  (import.meta.env.PUBLIC_API_URL as string | undefined) ?? 'http://localhost:8080';
+const wsResponse = await fetch(`${apiUrl}/api/auth/workspaces`, {
+  headers: { Cookie: `boppl_jwt=${auth.jwt}` },
+});
+if (wsResponse.ok) {
+  const { workspaces } = (await wsResponse.json()) as { workspaces: Array<unknown> };
+  if (workspaces.length > 0) {
+    return Astro.redirect('/app');
+  }
+}
+
+const domainPart = auth.email.split('@')[1]?.split('.')[0] ?? '';
+const suggestedName = domainPart
+  ? domainPart.charAt(0).toUpperCase() + domainPart.slice(1)
+  : 'My workspace';
+const suggestedSlug = suggestedName.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/^-+|-+$/g, '');
+const userInitial = (auth.email[0] || 'U').toUpperCase();
+const userEmail = auth.email;
+---
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Create your workspace · Mnema</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="preload" href="/fonts/GeistVF.woff2" as="font" type="font/woff2" crossorigin />
+  <script is:inline>
+    (function(){var t=localStorage.getItem('mnema-theme')||'dark';document.documentElement.setAttribute('data-theme',t);})();
+  </script>
+  <style is:global>
+    /* PAGE RESET */
+    .cw-page * { box-sizing: border-box; }
+    .cw-page { margin: 0; padding: 0; min-height: 100vh; position: relative; overflow-x: hidden; }
+    .cw-page * { scrollbar-width: none; -ms-overflow-style: none; }
+    .cw-page *::-webkit-scrollbar { display: none; }
+    .cw-page button { font-family: var(--sans); }
+
+    /* FLUID BACKDROP */
+    .cw-bg { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 0; }
+    .cw-bg .cw-fluid { position: absolute; inset: 0; filter: url(#cw-goo); opacity: calc(0.5 + 0.45 * 0.5); }
+    [data-theme="light"] .cw-bg .cw-fluid { opacity: calc(0.45 * 0.4); mix-blend-mode: multiply; }
+    .cw-blob { position: absolute; border-radius: 50%; filter: blur(6px); will-change: transform; }
+    .cw-b1 { width: 360px; height: 360px; left: 6%; top: 8%; background: rgba(var(--accent-rgb), 0.8); animation: cw-f1 28s ease-in-out infinite; }
+    .cw-b2 { width: 420px; height: 420px; right: 4%; top: 16%; background: rgba(var(--aux-1-rgb,124,156,255), 0.7); animation: cw-f2 32s ease-in-out infinite; }
+    .cw-b3 { width: 300px; height: 300px; left: 30%; bottom: -6%; background: rgba(var(--aux-2-rgb,200,162,255), 0.75); animation: cw-f3 30s ease-in-out infinite; }
+    .cw-b4 { width: 260px; height: 260px; right: 18%; bottom: 4%; background: rgba(var(--aux-3-rgb,255,122,138), 0.7); animation: cw-f4 34s ease-in-out infinite; }
+    @keyframes cw-f1 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(180px, 100px) scale(1.1); } }
+    @keyframes cw-f2 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(-200px, 90px) scale(1.15); } }
+    @keyframes cw-f3 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(120px, -180px) scale(1.05); } }
+    @keyframes cw-f4 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(160px, -100px) scale(1.1); } }
+
+    /* TOPBAR */
+    .cw-topbar {
+      position: relative; z-index: 2;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 18px 28px;
+    }
+    .cw-brand {
+      display: inline-flex; align-items: center; gap: 9px;
+      font: 600 14px/1 var(--sans); color: var(--ink); text-decoration: none;
+    }
+    .cw-glyph {
+      width: 26px; height: 26px; border-radius: 7px;
+      overflow: hidden; display: inline-flex; flex-shrink: 0;
+    }
+    .cw-top-right { display: flex; align-items: center; gap: 16px; color: var(--ink-muted); font: 500 12px/1 var(--sans); }
+    .cw-signed-as { display: inline-flex; align-items: center; gap: 6px; }
+    .cw-ya { width: 18px; height: 18px; border-radius: 50%; background: linear-gradient(135deg, rgba(var(--accent-rgb),0.95), rgba(255,122,138,0.95)); color: var(--on-ink); font: 700 9px/1 var(--sans); display: inline-flex; align-items: center; justify-content: center; }
+    .cw-top-right a { color: var(--ink-soft); text-decoration: none; }
+    .cw-top-right a:hover { color: var(--ink); }
+
+    /* MAIN */
+    .cw-main {
+      position: relative; z-index: 2;
+      display: flex; flex-direction: column; align-items: center;
+      padding: 20px 24px 80px;
+    }
+
+    /* STEP INDICATOR */
+    .cw-steps {
+      display: flex; align-items: center; gap: 0;
+      margin: 0 auto 32px;
+      padding: 6px;
+      background: rgba(18,19,23,0.7);
+      backdrop-filter: blur(20px) saturate(160%);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 999px;
+    }
+    [data-theme="light"] .cw-steps { background: rgba(255,255,255,0.75); border-color: rgba(10,11,13,0.07); }
+    .cw-step {
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 14px; border-radius: 999px;
+      cursor: pointer; color: var(--ink-muted);
+      font: 500 12px/1 var(--sans);
+      background: transparent; border: 0;
+    }
+    .cw-step:hover { color: var(--ink); }
+    .cw-step.active { color: var(--ink); }
+    .cw-step.done { color: var(--ink-soft); }
+    .cw-step .cw-num {
+      font: 600 11px/1 var(--mono); color: var(--ink-faint); letter-spacing: 0.04em;
+    }
+    .cw-step.active .cw-num { color: var(--accent); }
+    .cw-step.done .cw-num { color: var(--status-sync,#6BE39B); }
+    .cw-step-sep { width: 18px; height: 1px; background: var(--line-strong); margin: 0 2px; }
+
+    /* CARD */
+    .cw-card {
+      width: 100%; max-width: 540px;
+      background: rgba(6,7,10,0.72);
+      backdrop-filter: blur(24px) saturate(140%);
+      border-radius: 16px; padding: 30px 32px 28px;
+      position: relative;
+    }
+    [data-theme="light"] .cw-card {
+      background: rgba(255,255,255,0.82);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.6), 0 1px 0 var(--line), 0 30px 60px -30px rgba(10,11,13,0.18);
+    }
+    .cw-card::before {
+      content: ""; position: absolute; inset: 0;
+      border-radius: inherit; padding: 1px; pointer-events: none;
+      background: linear-gradient(180deg, rgba(255,255,255,0.24), rgba(255,255,255,0.04) 18%, transparent 40%);
+      -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      -webkit-mask-composite: xor; mask-composite: exclude;
+    }
+    [data-theme="light"] .cw-card::before { background: linear-gradient(180deg, rgba(10,11,13,0.10), transparent 40%); }
+
+    .cw-eyebrow {
+      font: 500 10.5px/1 var(--mono);
+      letter-spacing: 0.06em; text-transform: uppercase;
+      color: var(--ink-muted); margin-bottom: 10px;
+    }
+    .cw-card h1 { margin: 0 0 7px; font: 600 22px/1.25 var(--sans); letter-spacing: -0.02em; color: var(--ink); }
+    .cw-sub { margin: 0 0 22px; font-size: 13px; color: var(--ink-muted); }
+
+    /* FIELDS */
+    .cw-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+    .cw-field label {
+      font: 500 11.5px/1 var(--sans); color: var(--ink);
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .cw-field label .cw-hint { color: var(--ink-muted); font-weight: 400; }
+    .cw-iw {
+      display: flex; align-items: stretch;
+      border-radius: 8px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.10);
+      transition: border-color 140ms ease, box-shadow 140ms ease;
+    }
+    [data-theme="light"] .cw-iw { background: rgba(10,11,13,0.025); border-color: rgba(10,11,13,0.10); }
+    .cw-iw:focus-within { border-color: rgba(var(--accent-rgb),0.5); box-shadow: 0 0 0 3px rgba(var(--accent-rgb),0.10); }
+    .cw-iw input {
+      flex: 1; border: 0; outline: 0;
+      background: transparent; color: var(--ink);
+      font: 400 13.5px/1 var(--sans); padding: 10px 12px;
+    }
+    .cw-iw input::placeholder { color: var(--ink-muted); }
+    .cw-prefix, .cw-suffix {
+      display: inline-flex; align-items: center; padding: 0 11px;
+      font: 500 12px/1 var(--mono); color: var(--ink-muted);
+    }
+    .cw-prefix { border-right: 1px solid var(--line); }
+    .cw-suffix { border-left: 1px solid var(--line); }
+    .cw-helper { font: 400 11.5px/1.4 var(--sans); color: var(--ink-muted); margin-top: 2px; }
+    .cw-helper code { font: 500 11px var(--mono); padding: 1px 5px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 3px; color: var(--ink); }
+
+    /* ICON PICKER */
+    .cw-icon-picker { display: flex; gap: 8px; margin-bottom: 14px; }
+    .cw-icon-opt {
+      width: 38px; height: 38px; border-radius: 9px;
+      cursor: pointer; position: relative;
+      border: 2px solid transparent; background: transparent;
+      padding: 0;
+    }
+    .cw-icon-opt::after { content: ""; position: absolute; inset: 0; border-radius: 7px; background: linear-gradient(135deg, rgba(255,255,255,0.18), transparent 50%); }
+    .cw-icon-opt.selected { border-color: var(--accent); padding: 1px; }
+    .cw-icon-opt.selected::before {
+      content: "✓"; position: absolute; right: -5px; bottom: -5px;
+      width: 14px; height: 14px; border-radius: 50%;
+      background: var(--accent); color: var(--on-ink);
+      font: 700 9px/1 var(--sans);
+      display: flex; align-items: center; justify-content: center;
+      border: 2px solid var(--canvas); z-index: 2;
+    }
+    .cw-icon-opt .cw-inner {
+      width: 100%; height: 100%; border-radius: inherit;
+      display: flex; align-items: center; justify-content: center;
+      color: white; font: 700 17px/1 var(--sans); position: relative;
+    }
+    .cw-icon-opt.cw-upload {
+      background: var(--surface-2);
+      border: 1px dashed var(--line-strong);
+      color: var(--ink-muted);
+    }
+    .cw-icon-opt.cw-upload:hover { border-color: var(--accent-line); color: var(--ink); }
+    .cw-icon-opt.cw-upload::after { display: none; }
+
+    /* PRIVACY OPTIONS */
+    .cw-priv-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .cw-priv-opt {
+      display: flex; flex-direction: column; gap: 4px;
+      padding: 12px 14px; border-radius: 8px;
+      background: rgba(255,255,255,0.025);
+      border: 1px solid rgba(255,255,255,0.08);
+      cursor: pointer; position: relative;
+    }
+    [data-theme="light"] .cw-priv-opt { background: rgba(10,11,13,0.02); border-color: rgba(10,11,13,0.08); }
+    .cw-priv-opt:hover { border-color: var(--line-strong); }
+    .cw-priv-opt.selected { background: var(--accent-soft); border-color: var(--accent-line); }
+    .cw-priv-head {
+      display: flex; align-items: center; gap: 7px;
+      font: 600 12.5px/1 var(--sans); color: var(--ink);
+    }
+    .cw-priv-head svg { color: var(--ink-muted); }
+    .cw-priv-opt.selected .cw-priv-head svg { color: var(--accent); }
+    .cw-priv-desc { font: 400 11.5px/1.4 var(--sans); color: var(--ink-muted); }
+    .cw-radio {
+      position: absolute; top: 12px; right: 12px;
+      width: 14px; height: 14px; border-radius: 50%;
+      border: 1.5px solid var(--line-strong);
+    }
+    .cw-priv-opt.selected .cw-radio {
+      border-color: var(--accent); background: var(--accent);
+      box-shadow: inset 0 0 0 3px var(--canvas);
+    }
+    [data-theme="light"] .cw-priv-opt.selected .cw-radio { box-shadow: inset 0 0 0 3px white; }
+
+    /* BUTTONS */
+    .cw-action-row {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-top: 22px; padding-top: 18px;
+      border-top: 1px solid var(--line);
+    }
+    .cw-btn {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 9px 14px; border-radius: 7px;
+      font: 500 12.5px/1 var(--sans);
+      cursor: pointer; border: 1px solid transparent;
+      transition: background 140ms ease, border-color 140ms ease;
+    }
+    .cw-btn-ink { background: var(--ink); color: var(--on-ink); }
+    .cw-btn-ink:hover { background: rgba(255,255,255,0.92); }
+    [data-theme="light"] .cw-btn-ink:hover { background: #1A1B1F; }
+    .cw-btn-ghost { background: transparent; color: var(--ink-soft); }
+    .cw-btn-ghost:hover { color: var(--ink); background: var(--surface-2); }
+    .cw-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* PREVIEW PANEL */
+    .cw-preview {
+      margin-top: 16px;
+      background: rgba(255,255,255,0.025);
+      border: 1px solid var(--line);
+      border-radius: 9px; padding: 12px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    [data-theme="light"] .cw-preview { background: rgba(10,11,13,0.025); }
+    .cw-preview-eyebrow {
+      font: 500 10px/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase;
+      color: var(--ink-muted); margin-bottom: 5px;
+    }
+    .cw-preview-url { font: 500 12px/1 var(--mono); color: var(--ink); letter-spacing: -0.01em; }
+    .cw-preview-url .cw-slug { color: var(--accent); }
+    .cw-preview-meta { flex: 1; min-width: 0; }
+    .cw-preview-icon {
+      width: 44px; height: 44px; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      color: white; font: 700 22px/1 var(--sans);
+      flex-shrink: 0; position: relative;
+    }
+    .cw-preview-icon::after { content:""; position:absolute; inset:0; border-radius:inherit; background:linear-gradient(135deg, rgba(255,255,255,0.18), transparent 50%); }
+
+    /* STEP CONTENT */
+    .cw-sc { display: none; }
+    .cw-sc.active { display: block; }
+
+    /* STEP 2 — invite */
+    .cw-field-row-head {
+      display: grid; grid-template-columns: 1fr 96px 38px; gap: 6px;
+      padding: 0 2px 6px;
+      font: 500 10px/1 var(--mono); letter-spacing: 0.06em; color: var(--ink-muted);
+    }
+    .cw-invite-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+    .cw-invite-row { display: flex; gap: 6px; }
+    .cw-invite-row .cw-iw { flex: 1; }
+    .cw-invite-row .cw-iw input { padding: 9px 12px 9px 4px; }
+    .cw-invite-prefix { padding: 0 10px; border-right: none; }
+    .cw-role-pick {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 0 10px; border-radius: 8px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.10);
+      color: var(--ink); cursor: pointer;
+      font: 500 12px/1 var(--sans);
+      height: 38px; min-width: 96px;
+    }
+    [data-theme="light"] .cw-role-pick { background: rgba(10,11,13,0.025); border-color: rgba(10,11,13,0.10); }
+    .cw-role-pick:hover { border-color: var(--line-bright); }
+    .cw-role-pick svg { color: var(--ink-muted); }
+    .cw-remove {
+      width: 38px; height: 38px; border-radius: 8px;
+      background: transparent; border: 1px solid transparent;
+      color: var(--ink-muted); cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center;
+    }
+    .cw-remove:hover { background: var(--surface-2); color: var(--ink); }
+    .cw-row-actions {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 4px 2px 0;
+    }
+    .cw-add-more {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: transparent; border: 0;
+      color: var(--ink-soft); cursor: pointer;
+      font: 500 12px/1 var(--sans); padding: 6px 0;
+    }
+    .cw-add-more:hover { color: var(--ink); }
+    .cw-add-more.bulk { color: var(--ink-muted); }
+    .cw-role-legend {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+      margin-top: 14px; padding: 10px 12px;
+      background: rgba(255,255,255,0.025);
+      border: 1px solid var(--line); border-radius: 8px;
+    }
+    [data-theme="light"] .cw-role-legend { background: rgba(10,11,13,0.025); }
+    .cw-rl-item { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .cw-rl-key { font: 500 11px/1 var(--mono); letter-spacing: 0.04em; color: var(--ink); }
+    .cw-rl-desc { font: 400 11.5px/1.35 var(--sans); color: var(--ink-muted); }
+
+    /* STEP 3 — connect Claude */
+    .cw-connect-card {
+      background: rgba(255,255,255,0.025);
+      border: 1px solid var(--line);
+      border-radius: 9px; padding: 14px; margin-bottom: 16px;
+    }
+    [data-theme="light"] .cw-connect-card { background: rgba(10,11,13,0.025); }
+    .cw-connect-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .cw-who { display: flex; align-items: center; gap: 9px; font: 600 13px/1 var(--sans); color: var(--ink); }
+    .cw-who-logo { width: 28px; height: 28px; border-radius: 7px; background: linear-gradient(135deg, #FFB370, #FF7A8A); color: white; font: 700 13px/1 var(--sans); display: inline-flex; align-items: center; justify-content: center; }
+    .cw-who-sub { font: 500 10.5px var(--mono); color: var(--ink-muted); margin-left: 7px; letter-spacing: 0.04em; }
+    .cw-tag-pending { font: 500 10px/1 var(--mono); padding: 3px 7px; border-radius: 4px; background: var(--surface-3); color: var(--ink-muted); letter-spacing: 0.04em; }
+    .cw-endpoint {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 10px; border-radius: 6px;
+      background: var(--surface); border: 1px solid var(--line); margin-top: 8px;
+    }
+    .cw-endpoint-url { font: 500 12px/1 var(--mono); color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cw-copy-btn {
+      background: transparent; border: 0; color: var(--ink-muted); cursor: pointer;
+      padding: 4px 6px; border-radius: 4px;
+      display: inline-flex; align-items: center; gap: 4px;
+      font: 500 11px/1 var(--sans); flex-shrink: 0;
+    }
+    .cw-copy-btn:hover { color: var(--ink); background: var(--surface-2); }
+    .cw-steps-list { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+    .cw-step-line {
+      display: flex; align-items: flex-start; gap: 10px;
+      font: 400 12.5px/1.5 var(--sans); color: var(--ink-soft);
+    }
+    .cw-step-line .cw-snum {
+      flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%;
+      background: var(--surface-3); border: 1px solid var(--line);
+      display: inline-flex; align-items: center; justify-content: center;
+      font: 600 10px/1 var(--mono); color: var(--ink-soft); margin-top: 1px;
+    }
+    .cw-step-line.done .cw-snum { background: rgba(107,227,155,0.18); color: var(--status-sync,#6BE39B); border-color: rgba(107,227,155,0.4); }
+    .cw-step-line.done { color: var(--ink-muted); text-decoration: line-through; }
+    .cw-step-line code { font: 500 11.5px var(--mono); padding: 1px 5px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 3px; color: var(--ink); }
+    .cw-test-row {
+      display: flex; align-items: center; gap: 12px;
+      margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line);
+    }
+    .cw-hint-tiny { font: 500 11px/1.4 var(--sans); color: var(--ink-muted); }
+    .cw-hint-tiny code { font: 500 11px var(--mono); padding: 1px 5px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 3px; color: var(--ink); }
+    .cw-clients-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 14px; }
+    .cw-client-chip {
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      padding: 8px 10px; border-radius: 7px;
+      background: rgba(255,255,255,0.025);
+      border: 1px solid var(--line); color: var(--ink-soft);
+      font: 500 11.5px/1 var(--sans); cursor: pointer;
+    }
+    [data-theme="light"] .cw-client-chip { background: rgba(10,11,13,0.025); }
+    .cw-client-chip:hover { color: var(--ink); border-color: var(--line-strong); background: var(--surface-2); }
+    .cw-client-chip svg { color: var(--ink-muted); }
+
+    /* STEP 4 — done */
+    .cw-done { text-align: center; padding: 8px 0 4px; }
+    .cw-done-glyph {
+      width: 64px; height: 64px; border-radius: 18px;
+      overflow: hidden; display: inline-flex; flex-shrink: 0;
+      margin-bottom: 16px;
+    }
+    .cw-done h2 { margin: 0 0 6px; font: 600 22px/1.2 var(--sans); letter-spacing: -0.02em; color: var(--ink); }
+    .cw-done p { margin: 0 auto; font-size: 13px; color: var(--ink-muted); max-width: 380px; }
+    .cw-next-actions { display: flex; flex-direction: column; gap: 6px; margin: 22px 0 4px; }
+    .cw-next-card {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 14px; border-radius: 9px;
+      background: rgba(255,255,255,0.025);
+      border: 1px solid var(--line);
+      text-decoration: none; color: inherit;
+      transition: background 140ms ease, border-color 140ms ease;
+    }
+    [data-theme="light"] .cw-next-card { background: rgba(10,11,13,0.025); }
+    .cw-next-card:hover { background: var(--surface-2); border-color: var(--line-strong); }
+    .cw-nx-ico {
+      width: 32px; height: 32px; border-radius: 8px;
+      display: inline-flex; align-items: center; justify-content: center;
+      color: white; flex-shrink: 0; position: relative;
+    }
+    .cw-nx-ico::after { content:""; position:absolute; inset:0; border-radius:inherit; background:linear-gradient(135deg, rgba(255,255,255,0.2), transparent 50%); }
+    .cw-nx-body { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .cw-nx-title { font: 600 13px/1.2 var(--sans); color: var(--ink); }
+    .cw-nx-sub { font: 400 11.5px/1.35 var(--sans); color: var(--ink-muted); }
+    .cw-nx-arrow { color: var(--ink-muted); transition: transform 140ms ease; flex-shrink: 0; }
+    .cw-next-card:hover .cw-nx-arrow { transform: translateX(2px); color: var(--ink); }
+
+    /* HINT STRIP */
+    .cw-hint-strip {
+      margin-top: 22px; font: 500 11px/1 var(--mono); letter-spacing: 0.04em;
+      color: var(--ink-muted); text-align: center;
+      display: flex; align-items: center; justify-content: center; gap: 14px;
+    }
+    .cw-hint-strip .cw-hv { color: var(--ink-soft); }
+    .cw-hint-strip .cw-sep { color: var(--ink-faint); }
+    .cw-hint-strip kbd {
+      padding: 3px 6px; border-radius: 4px;
+      background: var(--surface-2); border: 1px solid var(--line);
+      color: var(--ink-soft); font: 500 10.5px/1 var(--mono);
+    }
+
+    /* ERROR */
+    .cw-error { font: 400 12px/1.4 var(--sans); color: #FF7A8A; margin-top: 8px; display: none; }
+    .cw-error.visible { display: block; }
+  </style>
+</head>
+<body class="cw-page">
+
+<!-- SVG goo filter -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <filter id="cw-goo">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="22" result="blur"/>
+      <feColorMatrix in="blur" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 22 -11" result="goo"/>
+      <feBlend in="SourceGraphic" in2="goo"/>
+    </filter>
+  </defs>
+</svg>
+
+<div class="cw-bg">
+  <div class="cw-fluid">
+    <div class="cw-blob cw-b1"></div>
+    <div class="cw-blob cw-b2"></div>
+    <div class="cw-blob cw-b3"></div>
+    <div class="cw-blob cw-b4"></div>
+  </div>
+</div>
+
+<header class="cw-topbar">
+  <a href="/" class="cw-brand">
+    <span class="cw-glyph"><img src="/logo.svg" width="26" height="26" alt="Mnema" draggable="false"></span>
+    <span>Mnema</span>
+  </a>
+  <div class="cw-top-right">
+    <span class="cw-signed-as">
+      <span class="cw-ya" id="cw-initial">{userInitial}</span>
+      <span id="cw-email">{userEmail}</span>
+    </span>
+    <a href="/auth/signout">Sign out</a>
+  </div>
+</header>
+
+<main class="cw-main">
+
+  <!-- STEP INDICATOR -->
+  <div class="cw-steps" id="cw-steps">
+    <button class="cw-step active" data-step="1">
+      <span class="cw-num">1</span>
+      Workspace
+    </button>
+    <span class="cw-step-sep"></span>
+    <button class="cw-step" data-step="2">
+      <span class="cw-num">2</span>
+      Invite team
+    </button>
+    <span class="cw-step-sep"></span>
+    <button class="cw-step" data-step="3">
+      <span class="cw-num">3</span>
+      Connect Claude
+    </button>
+    <span class="cw-step-sep"></span>
+    <button class="cw-step" data-step="4">
+      <span class="cw-num">4</span>
+      Finish
+    </button>
+  </div>
+
+  <!-- CARD -->
+  <div class="cw-card">
+
+    <!-- STEP 1 — workspace name + icon + visibility -->
+    <div class="cw-sc active" data-sc="1">
+      <div class="cw-eyebrow">STEP 1 OF 4 · WORKSPACE</div>
+      <h1>Name your workspace</h1>
+      <p class="cw-sub">This is where your team's docs live. You can rename it later.</p>
+
+      <div class="cw-field">
+        <label>Workspace name <span class="cw-hint">Required</span></label>
+        <div class="cw-iw">
+          <input id="cw-ws-name" type="text" value={suggestedName} placeholder="acme-design" autocomplete="off" />
+        </div>
+      </div>
+
+      <div class="cw-field">
+        <label>Workspace URL</label>
+        <div class="cw-iw">
+          <span class="cw-prefix">mnema.app /</span>
+          <input id="cw-ws-slug" type="text" value={suggestedSlug} placeholder="acme-design" autocomplete="off" />
+          <span class="cw-suffix">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          </span>
+        </div>
+        <p class="cw-helper">Lowercase letters, numbers, hyphens. <code id="cw-slug-preview">{suggestedSlug}.mnema.app</code></p>
+      </div>
+
+      <div class="cw-field">
+        <label>Icon</label>
+        <div class="cw-icon-picker" id="cw-icon-picker">
+          <button class="cw-icon-opt selected" data-grad="linear-gradient(135deg, #7C9CFF, #C8A2FF)">
+            <span class="cw-inner" style="background:linear-gradient(135deg, #7C9CFF, #C8A2FF);" id="cw-icon-letter-0">{suggestedName[0]?.toUpperCase() ?? 'W'}</span>
+          </button>
+          <button class="cw-icon-opt" data-grad="linear-gradient(135deg, #FFB370, #FF7A8A)">
+            <span class="cw-inner" style="background:linear-gradient(135deg, #FFB370, #FF7A8A);" id="cw-icon-letter-1">{suggestedName[0]?.toUpperCase() ?? 'W'}</span>
+          </button>
+          <button class="cw-icon-opt" data-grad="linear-gradient(135deg, #6BE39B, #2B9B9B)">
+            <span class="cw-inner" style="background:linear-gradient(135deg, #6BE39B, #2B9B9B);" id="cw-icon-letter-2">{suggestedName[0]?.toUpperCase() ?? 'W'}</span>
+          </button>
+          <button class="cw-icon-opt" data-grad="linear-gradient(135deg, #FF7A8A, #B847C0)">
+            <span class="cw-inner" style="background:linear-gradient(135deg, #FF7A8A, #B847C0);" id="cw-icon-letter-3">{suggestedName[0]?.toUpperCase() ?? 'W'}</span>
+          </button>
+          <button class="cw-icon-opt" data-grad="linear-gradient(135deg, #C8A2FF, #7C9CFF)">
+            <span class="cw-inner" style="background:linear-gradient(135deg, #C8A2FF, #7C9CFF);" id="cw-icon-letter-4">{suggestedName[0]?.toUpperCase() ?? 'W'}</span>
+          </button>
+          <button class="cw-icon-opt" data-grad="linear-gradient(135deg, #1E1F23, #3D4046)">
+            <span class="cw-inner" style="background:linear-gradient(135deg, #1E1F23, #3D4046);" id="cw-icon-letter-5">{suggestedName[0]?.toUpperCase() ?? 'W'}</span>
+          </button>
+          <button class="cw-icon-opt cw-upload" title="Upload custom">
+            <span class="cw-inner">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+            </span>
+          </button>
+        </div>
+      </div>
+
+      <div class="cw-field" style="margin-bottom:0;">
+        <label>Visibility</label>
+        <div class="cw-priv-row" id="cw-priv-row">
+          <div class="cw-priv-opt selected" data-priv="private">
+            <span class="cw-radio"></span>
+            <span class="cw-priv-head">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+              Private
+            </span>
+            <span class="cw-priv-desc">Only invited people can join.</span>
+          </div>
+          <div class="cw-priv-opt" data-priv="org">
+            <span class="cw-radio"></span>
+            <span class="cw-priv-head">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>
+              Org-wide
+            </span>
+            <span class="cw-priv-desc" id="cw-org-desc">Anyone with a @{userEmail.split('@')[1] ?? 'yourcompany.com'} email.</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="cw-preview">
+        <div class="cw-preview-icon" id="cw-preview-icon" style="background:linear-gradient(135deg, #7C9CFF, #C8A2FF);">
+          <span id="cw-preview-letter">{suggestedName[0]?.toUpperCase() ?? 'W'}</span>
+        </div>
+        <div class="cw-preview-meta">
+          <div class="cw-preview-eyebrow">YOUR WORKSPACE</div>
+          <div class="cw-preview-url">
+            <span class="cw-slug" id="cw-preview-slug">{suggestedSlug}</span>.mnema.app
+          </div>
+        </div>
+      </div>
+
+      <p class="cw-error" id="cw-step1-error"></p>
+
+      <div class="cw-action-row">
+        <button class="cw-btn cw-btn-ghost" id="cw-s1-skip">Skip for now</button>
+        <button class="cw-btn cw-btn-ink" id="cw-s1-continue">
+          Continue
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- STEP 2 — invite team -->
+    <div class="cw-sc" data-sc="2">
+      <div class="cw-eyebrow">STEP 2 OF 4 · INVITE TEAM</div>
+      <h1>Bring your team along</h1>
+      <p class="cw-sub">Invite up to 5 teammates on the Pro plan. They'll get a magic link by email.</p>
+
+      <div class="cw-field-row-head">
+        <span>EMAIL</span>
+        <span>ROLE</span>
+        <span></span>
+      </div>
+
+      <div class="cw-invite-list" id="cw-invite-list">
+        <div class="cw-invite-row">
+          <div class="cw-iw">
+            <span class="cw-prefix cw-invite-prefix">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22 6 12 13 2 6"/></svg>
+            </span>
+            <input type="email" placeholder="teammate@company.com" />
+          </div>
+          <button class="cw-role-pick">
+            Editor
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <button class="cw-remove" aria-label="Remove">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div class="cw-invite-row">
+          <div class="cw-iw">
+            <span class="cw-prefix cw-invite-prefix">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22 6 12 13 2 6"/></svg>
+            </span>
+            <input type="email" placeholder="teammate@company.com" />
+          </div>
+          <button class="cw-role-pick">
+            Viewer
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <button class="cw-remove" aria-label="Remove">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="cw-row-actions">
+        <button class="cw-add-more" id="cw-add-invite">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          Add another
+        </button>
+        <button class="cw-add-more bulk">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+          Paste emails
+        </button>
+      </div>
+
+      <div class="cw-role-legend">
+        <div class="cw-rl-item">
+          <span class="cw-rl-key">Editor</span>
+          <span class="cw-rl-desc">Read, write, comment, share</span>
+        </div>
+        <div class="cw-rl-item">
+          <span class="cw-rl-key">Viewer</span>
+          <span class="cw-rl-desc">Read &amp; comment only</span>
+        </div>
+      </div>
+
+      <div class="cw-preview" style="margin-top: 18px;">
+        <div style="display:flex;align-items:center;">
+          <span style="width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,#FFB370,#FF7A8A);color:white;font:700 10px/1 var(--sans);display:inline-flex;align-items:center;justify-content:center;border:2px solid var(--canvas);">{userInitial}</span>
+          <span style="width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,#7C9CFF,#C8A2FF);color:white;font:700 10px/1 var(--sans);display:inline-flex;align-items:center;justify-content:center;margin-left:-7px;border:2px solid var(--canvas);">T</span>
+          <span style="width:24px;height:24px;border-radius:50%;background:var(--surface-3);color:var(--ink-muted);font:600 10px/1 var(--mono);display:inline-flex;align-items:center;justify-content:center;margin-left:-7px;border:2px solid var(--canvas);">+2</span>
+        </div>
+        <div class="cw-preview-meta">
+          <div class="cw-preview-eyebrow">PENDING INVITES</div>
+          <div style="font:500 12px/1.2 var(--sans);color:var(--ink);">Invites will be sent by email</div>
+        </div>
+      </div>
+
+      <div class="cw-action-row">
+        <button class="cw-btn cw-btn-ghost" data-go="1">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M19 12H5M11 19l-7-7 7-7"/></svg>
+          Back
+        </button>
+        <div style="display:flex;gap:8px;">
+          <button class="cw-btn cw-btn-ghost" data-go="3">Skip for now</button>
+          <button class="cw-btn cw-btn-ink" data-go="3">
+            Send invites
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 3 — connect Claude -->
+    <div class="cw-sc" data-sc="3">
+      <div class="cw-eyebrow">STEP 3 OF 4 · MCP BRIDGE</div>
+      <h1>Connect to Claude</h1>
+      <p class="cw-sub">One MCP endpoint and Claude reads your workspace live. No re-uploads, ever.</p>
+
+      <div class="cw-connect-card">
+        <div class="cw-connect-head">
+          <div class="cw-who">
+            <span class="cw-who-logo">C</span>
+            <span>Claude Desktop<span class="cw-who-sub">SONNET 4.5</span></span>
+          </div>
+          <span class="cw-tag-pending">PENDING</span>
+        </div>
+
+        <div class="cw-endpoint">
+          <span class="cw-endpoint-url" id="cw-mcp-url">https://api.mnema.app/mcp/<span id="cw-mcp-slug">{suggestedSlug}</span></span>
+          <button class="cw-copy-btn" id="cw-copy-btn">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            Copy
+          </button>
+        </div>
+
+        <div class="cw-steps-list">
+          <div class="cw-step-line done">
+            <span class="cw-snum">
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </span>
+            <span>Workspace MCP key generated</span>
+          </div>
+          <div class="cw-step-line">
+            <span class="cw-snum">2</span>
+            <span>In Claude Desktop, open <b style="color:var(--ink);">Settings → Connectors → Add MCP server</b> and paste the URL above.</span>
+          </div>
+          <div class="cw-step-line">
+            <span class="cw-snum">3</span>
+            <span>Claude can now call <code>get_doc</code>, <code>search_workspace</code> and <code>list_folders</code> against your docs.</span>
+          </div>
+        </div>
+
+        <div class="cw-test-row">
+          <button class="cw-btn cw-btn-ghost" style="padding:7px 12px;">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            Test connection
+          </button>
+          <span class="cw-hint-tiny">Or run <code id="cw-npx-cmd">npx @mnema/connect --workspace=<span id="cw-npx-slug">{suggestedSlug}</span></code></span>
+        </div>
+      </div>
+
+      <div class="cw-clients-row">
+        <button class="cw-client-chip">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/></svg>
+          claude.ai
+        </button>
+        <button class="cw-client-chip">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+          VS Code
+        </button>
+        <button class="cw-client-chip">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+          Cursor
+        </button>
+        <button class="cw-client-chip">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Other client
+        </button>
+      </div>
+
+      <div class="cw-action-row">
+        <button class="cw-btn cw-btn-ghost" data-go="2">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M19 12H5M11 19l-7-7 7-7"/></svg>
+          Back
+        </button>
+        <div style="display:flex;gap:8px;">
+          <button class="cw-btn cw-btn-ghost" data-go="4">Skip for now</button>
+          <button class="cw-btn cw-btn-ink" data-go="4">
+            Continue
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 4 — done -->
+    <div class="cw-sc" data-sc="4">
+      <div class="cw-eyebrow" style="text-align:center;">STEP 4 OF 4 · READY</div>
+      <div class="cw-done">
+        <div class="cw-done-glyph"><img src="/logo.svg" width="64" height="64" alt="Mnema" draggable="false"></div>
+        <h2 id="cw-done-title">{suggestedSlug} is live</h2>
+        <p>Your workspace is set up. Claude is connected. Edit docs and your team — and Claude — see them in real-time.</p>
+      </div>
+
+      <div class="cw-next-actions">
+        <a class="cw-next-card" href="/app/first-doc">
+          <span class="cw-nx-ico" style="background:linear-gradient(135deg,#FFB370,#FF7A8A);">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M12 18v-6M9 15h6"/></svg>
+          </span>
+          <span class="cw-nx-body">
+            <span class="cw-nx-title">Write your first doc</span>
+            <span class="cw-nx-sub">Start with a README — it's already pre-filled.</span>
+          </span>
+          <svg class="cw-nx-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+        </a>
+        <a class="cw-next-card" href="/app/settings/members">
+          <span class="cw-nx-ico" style="background:linear-gradient(135deg,#7C9CFF,#C8A2FF);">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>
+          </span>
+          <span class="cw-nx-body">
+            <span class="cw-nx-title">Invite more teammates</span>
+            <span class="cw-nx-sub">More people, more context for Claude.</span>
+          </span>
+          <svg class="cw-nx-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+        </a>
+        <a class="cw-next-card" href="/app/settings/mcp">
+          <span class="cw-nx-ico" style="background:linear-gradient(135deg,#6BE39B,#2B9B9B);">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+          </span>
+          <span class="cw-nx-body">
+            <span class="cw-nx-title">Try the MCP bridge</span>
+            <span class="cw-nx-sub">Ask Claude something — it'll cite your docs.</span>
+          </span>
+          <svg class="cw-nx-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+        </a>
+      </div>
+
+      <div class="cw-action-row">
+        <button class="cw-btn cw-btn-ghost" data-go="3">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M19 12H5M11 19l-7-7 7-7"/></svg>
+          Back
+        </button>
+        <button class="cw-btn cw-btn-ink" id="cw-enter-btn">
+          Enter workspace
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+        </button>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="cw-hint-strip" id="cw-hint-strip">
+    <span>Press <kbd>Enter</kbd> to continue</span>
+    <span class="cw-sep">·</span>
+    <span><span class="cw-hv">Step 1</span> of 4</span>
+  </div>
+
+</main>
+
+<script is:inline>
+(function() {
+  let currentStep = 1;
+  let wsCreated = false;
+  let createdSlug = '';
+
+  function goTo(n) {
+    n = parseInt(n, 10);
+    if (n < 1 || n > 4) return;
+
+    // Update step content
+    document.querySelectorAll('.cw-sc').forEach(function(el) {
+      el.classList.toggle('active', el.dataset.sc === String(n));
+    });
+    // Update step indicator
+    document.querySelectorAll('.cw-step').forEach(function(el) {
+      var s = parseInt(el.dataset.step, 10);
+      el.classList.toggle('active', s === n);
+      el.classList.toggle('done', s < n);
+    });
+    // Update hint strip
+    document.querySelector('.cw-hint-strip .cw-hv').textContent = 'Step ' + n;
+    // Hide hint strip on step 4
+    document.getElementById('cw-hint-strip').style.display = n === 4 ? 'none' : 'flex';
+
+    currentStep = n;
+  }
+
+  // data-go navigation
+  document.querySelectorAll('[data-go]').forEach(function(el) {
+    el.addEventListener('click', function() { goTo(el.dataset.go); });
+  });
+  // step indicator navigation
+  document.querySelectorAll('#cw-steps .cw-step').forEach(function(el) {
+    el.addEventListener('click', function() { goTo(el.dataset.step); });
+  });
+
+  // Enter key to advance
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && document.activeElement.tagName !== 'INPUT' && currentStep < 4) {
+      if (currentStep === 1) {
+        document.getElementById('cw-s1-continue').click();
+      } else {
+        goTo(currentStep + 1);
+      }
+    }
+  });
+
+  // --- STEP 1: slug sync + icon picker + privacy ---
+  var wsNameEl = document.getElementById('cw-ws-name');
+  var wsSlugEl = document.getElementById('cw-ws-slug');
+  var previewSlugEl = document.getElementById('cw-preview-slug');
+  var slugPreviewCode = document.getElementById('cw-slug-preview');
+  var previewIconEl = document.getElementById('cw-preview-icon');
+  var previewLetterEl = document.getElementById('cw-preview-letter');
+  var doneTitle = document.getElementById('cw-done-title');
+  var mcpSlugEl = document.getElementById('cw-mcp-slug');
+  var npxSlugEl = document.getElementById('cw-npx-slug');
+
+  function slugify(v) {
+    return v.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/^-+|-+$/g, '') || 'your-workspace';
+  }
+
+  function syncSlug() {
+    var slug = slugify(wsNameEl.value);
+    wsSlugEl.value = slug;
+    previewSlugEl.textContent = slug;
+    slugPreviewCode.textContent = slug + '.mnema.app';
+    previewLetterEl.textContent = (wsNameEl.value[0] || 'W').toUpperCase();
+    // update icon letters
+    for (var i = 0; i <= 5; i++) {
+      var el = document.getElementById('cw-icon-letter-' + i);
+      if (el) el.textContent = (wsNameEl.value[0] || 'W').toUpperCase();
+    }
+    // update MCP slug
+    if (mcpSlugEl) mcpSlugEl.textContent = slug;
+    if (npxSlugEl) npxSlugEl.textContent = slug;
+    // update done title
+    if (doneTitle) doneTitle.textContent = slug + ' is live';
+  }
+
+  wsNameEl.addEventListener('input', syncSlug);
+  wsSlugEl.addEventListener('input', function() {
+    var slug = wsSlugEl.value || 'your-workspace';
+    previewSlugEl.textContent = slug;
+    slugPreviewCode.textContent = slug + '.mnema.app';
+    if (mcpSlugEl) mcpSlugEl.textContent = slug;
+    if (npxSlugEl) npxSlugEl.textContent = slug;
+    if (doneTitle) doneTitle.textContent = slug + ' is live';
+  });
+
+  // Icon picker
+  var selectedGrad = 'linear-gradient(135deg, #7C9CFF, #C8A2FF)';
+  document.querySelectorAll('#cw-icon-picker .cw-icon-opt:not(.cw-upload)').forEach(function(opt) {
+    opt.addEventListener('click', function() {
+      document.querySelectorAll('#cw-icon-picker .cw-icon-opt').forEach(function(o) { o.classList.remove('selected'); });
+      opt.classList.add('selected');
+      selectedGrad = opt.dataset.grad;
+      previewIconEl.style.background = selectedGrad;
+    });
+  });
+
+  // Privacy
+  document.querySelectorAll('#cw-priv-row .cw-priv-opt').forEach(function(opt) {
+    opt.addEventListener('click', function() {
+      document.querySelectorAll('#cw-priv-row .cw-priv-opt').forEach(function(o) { o.classList.remove('selected'); });
+      opt.classList.add('selected');
+    });
+  });
+
+  // Copy MCP URL
+  document.getElementById('cw-copy-btn').addEventListener('click', function() {
+    var url = 'https://api.mnema.app/mcp/' + wsSlugEl.value;
+    navigator.clipboard.writeText(url).then(function() {
+      var btn = document.getElementById('cw-copy-btn');
+      btn.textContent = '✓ Copied';
+      setTimeout(function() {
+        btn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Copy';
+      }, 1500);
+    });
+  });
+
+  // Add invite row
+  document.getElementById('cw-add-invite').addEventListener('click', function() {
+    var list = document.getElementById('cw-invite-list');
+    var row = document.createElement('div');
+    row.className = 'cw-invite-row';
+    row.innerHTML = '<div class="cw-iw"><span class="cw-prefix cw-invite-prefix"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22 6 12 13 2 6"/></svg></span><input type="email" placeholder="teammate@company.com" /></div><button class="cw-role-pick">Editor<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></button><button class="cw-remove" aria-label="Remove"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></button>';
+    row.querySelector('.cw-remove').addEventListener('click', function() { row.remove(); });
+    list.appendChild(row);
+  });
+  document.querySelectorAll('.cw-invite-row .cw-remove').forEach(function(b) {
+    b.addEventListener('click', function() { b.closest('.cw-invite-row').remove(); });
+  });
+
+  // Step 1 continue — calls API
+  document.getElementById('cw-s1-continue').addEventListener('click', async function() {
+    var name = wsNameEl.value.trim();
+    if (!name) return;
+    var btn = document.getElementById('cw-s1-continue');
+    var errEl = document.getElementById('cw-step1-error');
+    btn.disabled = true;
+    btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Creating…';
+    errEl.classList.remove('visible');
+
+    try {
+      var res = await fetch('/api/auth/create-workspace', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name })
+      });
+      if (res.ok) {
+        wsCreated = true;
+        createdSlug = wsSlugEl.value;
+        goTo(2);
+      } else if (res.status === 409) {
+        errEl.textContent = 'That name is already in use. Try another.';
+        errEl.classList.add('visible');
+      } else if (res.status === 401) {
+        errEl.textContent = 'Your session expired. Please sign in again.';
+        errEl.classList.add('visible');
+        setTimeout(function() { window.location.href = '/auth/login'; }, 1500);
+      } else {
+        errEl.textContent = 'Could not create workspace. Try again.';
+        errEl.classList.add('visible');
+      }
+    } catch (e) {
+      errEl.textContent = 'Network error. Try again.';
+      errEl.classList.add('visible');
+    }
+
+    btn.disabled = false;
+    btn.innerHTML = 'Continue <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>';
+  });
+
+  // Step 1 skip — still create with default name or just advance
+  document.getElementById('cw-s1-skip').addEventListener('click', function() {
+    goTo(2);
+  });
+
+  // Enter workspace button
+  document.getElementById('cw-enter-btn').addEventListener('click', function() {
+    window.location.href = '/app';
+  });
+})();
+</script>
+
+</body>
+</html>

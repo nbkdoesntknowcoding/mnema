@@ -1,0 +1,830 @@
+---
+import '../styles/global.css';
+
+// Read oauth_request_id BEFORE checking auth so an already-signed-in user
+// arriving from the Claude Desktop reconnect flow is bridged straight to the
+// consent screen instead of being sent to /app.
+const oauthRequestId = Astro.url.searchParams.get('oauth_request_id');
+const auth = Astro.locals.auth;
+
+// ?next= allows any internal page (must start with /) to be the post-login
+// destination — used by the pricing page CTAs to send users straight to billing.
+const nextParam = Astro.url.searchParams.get('next');
+const safeNext = nextParam && nextParam.startsWith('/') ? nextParam : null;
+
+if (auth) {
+  if (oauthRequestId && /^[0-9a-f-]{36}$/.test(oauthRequestId)) {
+    // Already authenticated + OAuth reconnect → skip the login form entirely.
+    const apiUrl = (import.meta.env.PUBLIC_API_URL as string | undefined) ?? 'http://localhost:8080';
+    const resumeUrl = `${apiUrl}/oauth/resume?request_id=${encodeURIComponent(oauthRequestId)}&proof=${encodeURIComponent(auth.jwt)}`;
+    return Astro.redirect(resumeUrl);
+  }
+  // Already logged in — honour ?next or fall back to /app.
+  return Astro.redirect(safeNext ?? '/app');
+}
+
+// If arriving from the MCP OAuth flow (unauthenticated), persist the request_id
+// in a short-lived cookie so it survives through SSO redirects back to /auth/callback.
+if (oauthRequestId && /^[0-9a-f-]{36}$/.test(oauthRequestId)) {
+  Astro.cookies.set('oauth_request_id', oauthRequestId, {
+    httpOnly: true,
+    secure: false, // matches other web-app cookies
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 15 * 60, // 15 min — same window as the pending OAuth request
+  });
+}
+
+// Persist ?next so it survives the WorkOS SSO round-trip.
+if (safeNext) {
+  Astro.cookies.set('login_next', safeNext, {
+    httpOnly: true,
+    secure: false,
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 15 * 60,
+  });
+}
+
+const errorParam = Astro.url.searchParams.get('error');
+const ERROR_MESSAGES: Record<string, string> = {
+  missing_code:        'Authentication failed — no code returned. Please try again.',
+  code_exchange_failed:'Authentication failed — could not verify your identity. Please try again.',
+  bootstrap_failed:    'Account setup failed. Contact support if this persists.',
+  account_not_found:   'No Mnema account found for that email. Sign up first.',
+};
+const errorMessage = errorParam ? (ERROR_MESSAGES[errorParam] ?? 'Something went wrong. Please try again.') : null;
+---
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mnema · Sign in</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+  <link rel="preload" href="/fonts/geist/Geist-Regular.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="preload" href="/fonts/geist/Geist-Medium.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="preload" href="/fonts/geist/Geist-SemiBold.woff2" as="font" type="font/woff2" crossorigin />
+
+  <script is:inline>
+    (function () {
+      try {
+        var s = localStorage.getItem('mnema-theme');
+        document.documentElement.setAttribute('data-theme', s === 'light' ? 'light' : 'dark');
+      } catch (e) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    })();
+  </script>
+
+  <style is:global>
+    /* Auth page accent override — near-white */
+    :root {
+      --accent:     #F4F5F7;
+      --accent-rgb: 244, 245, 247;
+      --accent-soft: rgba(244, 245, 247, 0.10);
+      --accent-line: rgba(244, 245, 247, 0.28);
+
+      --aux-1-rgb: 124, 156, 255;
+      --aux-2-rgb: 200, 162, 255;
+      --aux-3-rgb: 255, 144, 120;
+
+      --intensity:  0.34;
+      --anim-mult:  1.2;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; height: 100%; }
+    body {
+      background: var(--canvas);
+      color: var(--ink);
+      font-family: var(--sans);
+      -webkit-font-smoothing: antialiased;
+      font-feature-settings: "ss01";
+      min-height: 100vh;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    /* ── Animated background ─────────────────────────────────── */
+    .l-bg {
+      position: fixed; inset: 0;
+      pointer-events: none; overflow: hidden;
+      z-index: 0;
+    }
+    .l-bg .l-grid {
+      position: absolute; inset: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.022) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.022) 1px, transparent 1px);
+      background-size: 72px 72px;
+      background-position: -1px -1px;
+      mask-image: radial-gradient(ellipse 70% 70% at 50% 40%, black 30%, transparent 88%);
+      -webkit-mask-image: radial-gradient(ellipse 70% 70% at 50% 40%, black 30%, transparent 88%);
+      animation: l-gridBreath calc(14s / var(--anim-mult)) ease-in-out infinite;
+    }
+    [data-theme="light"] .l-bg .l-grid {
+      background-image:
+        linear-gradient(rgba(10,11,13,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(10,11,13,0.04) 1px, transparent 1px);
+    }
+    @keyframes l-gridBreath {
+      0%, 100% { opacity: 0.55; }
+      50%       { opacity: 1.0; }
+    }
+
+    .l-bg .l-fluid {
+      position: absolute; inset: 0;
+      filter: url(#l-goo);
+      opacity: calc(0.6 + var(--intensity) * 0.7);
+    }
+    [data-theme="light"] .l-bg .l-fluid {
+      opacity: calc(var(--intensity) * 0.5);
+      mix-blend-mode: multiply;
+    }
+    .l-bg .l-blob {
+      position: absolute;
+      border-radius: 50%;
+      will-change: transform;
+      filter: blur(6px);
+    }
+    .l-blob.b1 { width:380px;height:380px;left:8%;top:12%;    background:rgba(var(--accent-rgb),0.85); animation:l-f1 calc(28s/var(--anim-mult)) ease-in-out infinite; }
+    .l-blob.b2 { width:440px;height:440px;right:6%;top:20%;   background:rgba(var(--aux-1-rgb),0.75); animation:l-f2 calc(34s/var(--anim-mult)) ease-in-out infinite; }
+    .l-blob.b3 { width:320px;height:320px;left:28%;bottom:-6%;background:rgba(var(--aux-2-rgb),0.78); animation:l-f3 calc(31s/var(--anim-mult)) ease-in-out infinite; }
+    .l-blob.b4 { width:280px;height:280px;right:22%;bottom:8%;background:rgba(var(--aux-3-rgb),0.72); animation:l-f4 calc(36s/var(--anim-mult)) ease-in-out infinite; }
+    .l-blob.b5 { width:220px;height:220px;left:46%;top:38%;   background:rgba(var(--accent-rgb),0.70); animation:l-f5 calc(24s/var(--anim-mult)) ease-in-out infinite; }
+    .l-blob.b6 { width:260px;height:260px;left:12%;bottom:26%;background:rgba(var(--aux-1-rgb),0.72); animation:l-f6 calc(30s/var(--anim-mult)) ease-in-out infinite; }
+
+    @keyframes l-f1 { 0%,100%{transform:translate(0,0) scale(1)} 20%{transform:translate(180px,90px) scale(1.12)} 45%{transform:translate(80px,260px) scale(0.92)} 70%{transform:translate(-100px,180px) scale(1.06)} 90%{transform:translate(40px,60px) scale(0.96)} }
+    @keyframes l-f2 { 0%,100%{transform:translate(0,0) scale(1)} 30%{transform:translate(-200px,120px) scale(1.15)} 55%{transform:translate(-90px,280px) scale(0.94)} 80%{transform:translate(60px,160px) scale(1.05)} }
+    @keyframes l-f3 { 0%,100%{transform:translate(0,0) scale(1)} 25%{transform:translate(140px,-200px) scale(1.1)} 55%{transform:translate(-50px,-120px) scale(0.92)} 80%{transform:translate(-180px,-240px) scale(1.04)} }
+    @keyframes l-f4 { 0%,100%{transform:translate(0,0) scale(1)} 35%{transform:translate(180px,-130px) scale(1.12)} 70%{transform:translate(-80px,-60px) scale(0.95)} }
+    @keyframes l-f5 { 0%,100%{transform:translate(0,0) scale(1)} 25%{transform:translate(-160px,-80px) scale(1.18)} 50%{transform:translate(200px,60px) scale(0.88)} 75%{transform:translate(80px,180px) scale(1.06)} }
+    @keyframes l-f6 { 0%,100%{transform:translate(0,0) scale(1)} 40%{transform:translate(220px,-140px) scale(1.1)} 75%{transform:translate(-60px,80px) scale(0.94)} }
+
+    .l-bg .l-aurora {
+      position: absolute; inset: -20%;
+      background:
+        radial-gradient(circle at 18% 30%, rgba(var(--accent-rgb),0.32) 0%, transparent 45%),
+        radial-gradient(circle at 82% 55%, rgba(var(--aux-1-rgb),0.30) 0%, transparent 50%),
+        radial-gradient(circle at 50% 90%, rgba(var(--aux-3-rgb),0.22) 0%, transparent 50%);
+      filter: blur(50px);
+      opacity: calc(var(--intensity) * 1.1);
+      animation: l-aurora calc(22s/var(--anim-mult)) ease-in-out infinite;
+    }
+    [data-theme="light"] .l-bg .l-aurora { mix-blend-mode: multiply; opacity: calc(var(--intensity) * 0.45); }
+    @keyframes l-aurora {
+      0%,100% { transform: translate(0,0) rotate(0deg); }
+      33%     { transform: translate(60px,-30px) rotate(2deg); }
+      66%     { transform: translate(-40px,60px) rotate(-2deg); }
+    }
+
+    .l-bg .l-scan {
+      position: absolute; left: 0; right: 0; height: 1px; top: 0;
+      background: linear-gradient(90deg, transparent, rgba(var(--accent-rgb),0.5), transparent);
+      animation: l-scan calc(18s/var(--anim-mult)) linear infinite;
+    }
+    @keyframes l-scan {
+      0%   { top:-2%; opacity:0; }
+      20%  { opacity:1; }
+      80%  { opacity:1; }
+      100% { top:102%; opacity:0; }
+    }
+
+    .l-bg .l-star {
+      position: absolute;
+      background: rgba(255,255,255,0.85);
+      border-radius: 50%;
+      opacity: 0;
+      animation: l-twinkle calc(var(--life,5s) / var(--anim-mult)) ease-in-out infinite;
+      animation-delay: var(--delay,0s);
+    }
+    [data-theme="light"] .l-bg .l-star { background: rgba(10,11,13,0.45); }
+    @keyframes l-twinkle {
+      0%,100% { opacity:0; transform:scale(0.6); }
+      50%     { opacity:0.8; transform:scale(1); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .l-bg .l-blob,.l-bg .l-aurora,.l-bg .l-grid,.l-bg .l-scan,.l-bg .l-star { animation: none !important; }
+    }
+
+    /* ── Topbar ──────────────────────────────────────────────── */
+    .l-topbar {
+      height: 64px; padding: 0 32px;
+      display: flex; align-items: center; justify-content: space-between;
+      position: relative; z-index: 2;
+    }
+    .l-brand {
+      display: inline-flex; align-items: center; gap: 12px;
+      font: 600 16px/1 var(--sans); letter-spacing: -0.01em;
+      color: var(--ink); text-decoration: none;
+    }
+    .l-brand .l-glyph {
+      width: 30px; height: 30px; border-radius: 9px;
+      overflow: hidden; display: inline-flex; flex-shrink: 0;
+    }
+    .l-top-link {
+      font: 500 13.5px/1 var(--sans);
+      color: var(--ink-soft);
+      display: inline-flex; align-items: center; gap: 4px;
+    }
+    .l-top-link a { color: var(--ink); text-decoration: none; }
+    .l-top-link a:hover { text-decoration: underline; }
+
+    /* ── Main ────────────────────────────────────────────────── */
+    .l-main {
+      display: flex; align-items: center; justify-content: center;
+      padding: 32px 24px 80px;
+      position: relative; z-index: 2;
+    }
+    .l-col {
+      display: flex; flex-direction: column; align-items: center; width: 100%;
+    }
+
+    /* ── Auth card ───────────────────────────────────────────── */
+    .l-card {
+      width: 420px; max-width: 100%;
+      background: rgba(6,7,10,0.72);
+      backdrop-filter: blur(24px) saturate(140%);
+      -webkit-backdrop-filter: blur(24px) saturate(140%);
+      border-radius: 20px;
+      padding: 36px 36px 30px;
+      position: relative;
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,0.07),
+        inset 0 0 0 1px rgba(255,255,255,0.05),
+        0 40px 80px -30px rgba(255,255,255,0.04),
+        0 60px 100px -40px rgba(0,0,0,0.7);
+    }
+    [data-theme="light"] .l-card {
+      background: rgba(255,255,255,0.78);
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,0.6),
+        0 1px 0 var(--line),
+        0 30px 60px -30px rgba(10,11,13,0.18);
+    }
+    .l-card::before {
+      content: ""; position: absolute; inset: 0;
+      border-radius: inherit; padding: 1px; pointer-events: none;
+      background: linear-gradient(180deg, rgba(255,255,255,0.28), rgba(255,255,255,0.04) 18%, rgba(255,255,255,0) 40%);
+      -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      -webkit-mask-composite: xor; mask-composite: exclude;
+    }
+    [data-theme="light"] .l-card::before {
+      background: linear-gradient(180deg, rgba(10,11,13,0.10), rgba(10,11,13,0.02) 30%, transparent 50%);
+    }
+    .l-card::after {
+      content: ""; position: absolute; left: 15%; right: 15%; bottom: -3px;
+      height: 18px; pointer-events: none;
+      background: radial-gradient(ellipse 60% 100% at 50% 0%, rgba(255,255,255,0.2), transparent 70%);
+      filter: blur(6px); opacity: 0.55;
+    }
+    [data-theme="light"] .l-card::after { display: none; }
+
+    .l-auth-mark {
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 22px;
+    }
+    .l-glyph-lg {
+      width: 56px; height: 56px;
+      border-radius: 16px;
+      overflow: hidden; display: inline-flex; flex-shrink: 0;
+    }
+
+    .l-card h1 {
+      margin: 0 0 8px;
+      font: 600 24px/1.2 var(--sans);
+      letter-spacing: -0.02em;
+      text-align: center;
+    }
+    .l-sub {
+      margin: 0 0 20px;
+      text-align: center;
+      font-size: 14px; color: var(--ink-muted);
+      line-height: 1.5;
+    }
+
+    /* ── Workspace chip ──────────────────────────────────────── */
+    .l-ws-row {
+      display: flex; justify-content: center;
+      margin-bottom: 22px;
+    }
+    .l-ws-chip {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 6px 10px 6px 8px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 999px;
+      font: 500 12.5px/1 var(--sans);
+    }
+    [data-theme="light"] .l-ws-chip { background: rgba(10,11,13,0.03); border-color: rgba(10,11,13,0.08); }
+    .l-ws-dot {
+      width: 18px; height: 18px; border-radius: 6px;
+      background: linear-gradient(135deg, #7C9CFF, #C8A2FF);
+      display: inline-flex; align-items: center; justify-content: center;
+      color: white; font-weight: 700; font-size: 11px;
+      flex-shrink: 0;
+    }
+    .l-ws-name { color: var(--ink); }
+    .l-ws-switch {
+      color: var(--ink-muted); text-decoration: none;
+      font-size: 12px; margin-left: 4px;
+      border-bottom: 1px solid var(--ink-faint);
+    }
+    .l-ws-switch:hover { color: var(--ink); }
+
+    /* ── Mode toggle ─────────────────────────────────────────── */
+    .l-mode-row {
+      display: flex; justify-content: center;
+      margin: -6px 0 14px;
+      font: 500 12.5px/1 var(--sans);
+    }
+    .l-mode-toggle {
+      display: inline-flex;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 999px;
+      padding: 3px;
+    }
+    [data-theme="light"] .l-mode-toggle { background: rgba(10,11,13,0.03); border-color: rgba(10,11,13,0.06); }
+    .l-mode-toggle button {
+      border: 0; background: transparent;
+      color: var(--ink-muted); cursor: pointer;
+      padding: 7px 12px; border-radius: 999px;
+      font: 500 12px/1 var(--sans);
+      display: inline-flex; align-items: center; gap: 6px;
+      transition: background 140ms ease, color 140ms ease;
+    }
+    .l-mode-toggle button.active {
+      background: var(--ink); color: var(--on-ink);
+    }
+
+    /* ── Fields ──────────────────────────────────────────────── */
+    .l-field { display: flex; flex-direction: column; gap: 7px; margin-bottom: 12px; }
+    .l-field label {
+      font: 500 12.5px/1 var(--sans);
+      color: var(--ink-soft);
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .l-right-link {
+      color: var(--ink-muted); font-size: 12px; text-decoration: none;
+    }
+    .l-right-link:hover { color: var(--ink); }
+    .l-input {
+      width: 100%;
+      font: 400 14.5px/1 var(--sans);
+      padding: 13px 14px;
+      border-radius: 10px;
+      background: rgba(255,255,255,0.03);
+      color: var(--ink);
+      border: 1px solid rgba(255,255,255,0.10);
+      outline: none;
+      transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
+    }
+    [data-theme="light"] .l-input { background: rgba(10,11,13,0.025); border-color: rgba(10,11,13,0.12); }
+    .l-input::placeholder { color: var(--ink-muted); }
+    .l-input:focus {
+      border-color: rgba(var(--accent-rgb),0.6);
+      background: rgba(255,255,255,0.05);
+      box-shadow: 0 0 0 3px rgba(var(--accent-rgb),0.12);
+    }
+    [data-theme="light"] .l-input:focus { background: rgba(10,11,13,0.035); }
+
+    /* ── Primary button ──────────────────────────────────────── */
+    .l-btn-primary {
+      width: 100%; margin-top: 6px;
+      font: 600 14px/1 var(--sans);
+      padding: 14px 18px;
+      border-radius: 10px;
+      background: var(--ink); color: var(--on-ink);
+      border: 1px solid var(--ink);
+      cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      transition: transform 100ms ease, background 140ms ease;
+      position: relative;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.25);
+    }
+    .l-btn-primary:not(:disabled):hover { background: rgba(255,255,255,0.92); }
+    [data-theme="light"] .l-btn-primary:not(:disabled):hover { background: #1A1B1F; }
+    .l-btn-primary:active { transform: translateY(0.5px); }
+    .l-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .l-arrow { transition: transform 160ms ease; }
+    .l-btn-primary:not(:disabled):hover .l-arrow { transform: translateX(3px); }
+
+    /* ── Divider ─────────────────────────────────────────────── */
+    .l-divider {
+      display: flex; align-items: center; gap: 12px;
+      margin: 22px 0 18px;
+      color: var(--ink-muted);
+      font: 500 11px/1 var(--sans);
+      letter-spacing: 0.08em; text-transform: uppercase;
+    }
+    .l-divider::before, .l-divider::after {
+      content: ""; flex: 1; height: 1px;
+      background: rgba(255,255,255,0.08);
+    }
+    [data-theme="light"] .l-divider::before,
+    [data-theme="light"] .l-divider::after { background: rgba(10,11,13,0.08); }
+
+    /* ── SSO grid ────────────────────────────────────────────── */
+    .l-sso-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .l-sso {
+      display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+      padding: 11px 12px;
+      font: 500 13.5px/1 var(--sans); color: var(--ink);
+      background: rgba(255,255,255,0.025);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 10px;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 140ms ease, border-color 140ms ease;
+    }
+    [data-theme="light"] .l-sso { background: rgba(10,11,13,0.02); border-color: rgba(10,11,13,0.10); }
+    .l-sso:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.16); }
+    [data-theme="light"] .l-sso:hover { background: rgba(10,11,13,0.04); border-color: rgba(10,11,13,0.16); }
+    .l-sso svg { width: 16px; height: 16px; flex-shrink: 0; }
+
+    .l-sso-wide {
+      grid-column: 1 / -1;
+      padding: 12px;
+      justify-content: center;
+    }
+    .l-sso-lock {
+      margin-left: auto;
+      font: 500 10.5px/1 var(--sans);
+      letter-spacing: 0.06em; text-transform: uppercase;
+      color: var(--ink-muted);
+      display: inline-flex; align-items: center; gap: 4px;
+    }
+
+    /* ── Legal ───────────────────────────────────────────────── */
+    .l-legal {
+      margin: 22px 0 0;
+      text-align: center;
+      color: var(--ink-muted);
+      font: 400 12px/1.55 var(--sans);
+    }
+    .l-legal a { color: var(--ink-soft); text-decoration: none; border-bottom: 1px solid var(--ink-faint); }
+    .l-legal a:hover { color: var(--ink); }
+
+    /* ── Card footer ─────────────────────────────────────────── */
+    .l-card-foot {
+      text-align: center; margin-top: 22px;
+      color: var(--ink-muted); font-size: 13.5px;
+    }
+    .l-card-foot a {
+      color: var(--ink); text-decoration: none; font-weight: 500;
+      border-bottom: 1px solid var(--ink-faint); padding-bottom: 1px;
+    }
+    .l-card-foot a:hover { border-color: var(--ink); }
+
+    /* ── Trust strip ─────────────────────────────────────────── */
+    .l-trust {
+      display: flex; align-items: center; justify-content: center; gap: 28px;
+      margin-top: 56px;
+      color: var(--ink-muted);
+      font: 500 11px/1 var(--sans);
+      letter-spacing: 0.08em; text-transform: uppercase;
+    }
+    .l-trust .l-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--ink-faint); }
+    .l-trust .l-item { display: flex; align-items: center; gap: 8px; }
+    .l-trust .l-v { color: var(--ink-soft); font-weight: 600; }
+
+    /* ── Corner mark ─────────────────────────────────────────── */
+    .l-corner-mark {
+      position: fixed; left: 24px; bottom: 20px;
+      color: var(--ink-muted);
+      font: 500 11px/1 var(--sans);
+      letter-spacing: 0.08em; text-transform: uppercase;
+      z-index: 2;
+    }
+    .l-corner-mark .l-v { color: var(--ink-soft); }
+
+    /* ── Status pill ─────────────────────────────────────────── */
+    .l-status-pill {
+      position: fixed; right: 24px; bottom: 20px;
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 7px 11px 7px 9px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      color: var(--ink-soft);
+      font: 500 11px/1 var(--sans);
+      letter-spacing: 0.08em; text-transform: uppercase;
+      z-index: 2;
+      backdrop-filter: blur(8px);
+    }
+    [data-theme="light"] .l-status-pill { background: rgba(10,11,13,0.04); border-color: rgba(10,11,13,0.08); }
+    .l-signal {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: #6BE39B;
+      box-shadow: 0 0 8px rgba(107,227,155,0.6);
+      animation: l-pulse 2s ease-in-out infinite;
+    }
+    @keyframes l-pulse {
+      0%,100% { box-shadow: 0 0 0 0 rgba(107,227,155,0.7); }
+      50%     { box-shadow: 0 0 0 6px rgba(107,227,155,0); }
+    }
+  </style>
+</head>
+<body>
+
+<!-- SVG goo filter -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <filter id="l-goo">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="22" result="blur"/>
+      <feColorMatrix in="blur" mode="matrix"
+        values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 22 -11" result="goo"/>
+      <feBlend in="SourceGraphic" in2="goo"/>
+    </filter>
+  </defs>
+</svg>
+
+<!-- Animated background -->
+<div class="l-bg">
+  <div class="l-grid"></div>
+  <div class="l-aurora"></div>
+  <div class="l-scan"></div>
+  <div class="l-fluid">
+    <div class="l-blob b1"></div>
+    <div class="l-blob b2"></div>
+    <div class="l-blob b3"></div>
+    <div class="l-blob b4"></div>
+    <div class="l-blob b5"></div>
+    <div class="l-blob b6"></div>
+  </div>
+  <div id="l-stars"></div>
+</div>
+
+<!-- Topbar -->
+<header class="l-topbar">
+  <a href="/" class="l-brand">
+    <span class="l-glyph"><img src="/logo.svg" width="30" height="30" alt="Mnema" draggable="false"></span>
+    <span>Mnema</span>
+  </a>
+  <div class="l-top-link">New to Mnema? <a href="/signup">Create an account →</a></div>
+</header>
+
+<!-- Main content -->
+<main class="l-main">
+  <div class="l-col">
+
+    <div class="l-card" role="form" aria-label="Sign in">
+      <div class="l-auth-mark">
+        <span class="l-glyph-lg"><img src="/logo.svg" width="56" height="56" alt="Mnema" draggable="false"></span>
+      </div>
+
+      <h1>Welcome back</h1>
+      <p class="l-sub">Sign in to your workspace to continue.</p>
+
+      <!-- Workspace chip (shown if last workspace stored in localStorage) -->
+      <div class="l-ws-row" id="l-ws-row" style="display:none">
+        <div class="l-ws-chip">
+          <span class="l-ws-dot" id="l-ws-initial"></span>
+          <span class="l-ws-name" id="l-ws-name"></span>
+          <a href="#" class="l-ws-switch" id="l-ws-switch">Switch</a>
+        </div>
+      </div>
+
+      {errorMessage && (
+        <div style="margin:0 0 18px;padding:10px 14px;background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.28);border-radius:8px;font-size:13px;color:#fca5a5;text-align:center;">
+          {errorMessage}
+        </div>
+      )}
+
+      <!-- Mode toggle: magic link vs password -->
+      <div class="l-mode-row">
+        <div class="l-mode-toggle" role="tablist">
+          <button id="l-mode-link" class="active" role="tab" aria-selected="true">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><path d="m22 6-10 7L2 6"/></svg>
+            Magic link
+          </button>
+          <button id="l-mode-pass" role="tab" aria-selected="false">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            Password
+          </button>
+        </div>
+      </div>
+
+      <div class="l-field">
+        <label for="l-email">Email</label>
+        <input class="l-input" id="l-email" type="email" placeholder="you@workplace.com" autocomplete="email" />
+      </div>
+
+      <div class="l-field" id="l-pass-field" style="display:none">
+        <label for="l-pass">Password <a class="l-right-link" href="#">Forgot?</a></label>
+        <input class="l-input" id="l-pass" type="password" placeholder="••••••••" autocomplete="current-password" />
+      </div>
+
+      <button class="l-btn-primary" id="l-continue-btn" disabled>
+        <span id="l-cta-label">Send sign-in link</span>
+        <svg class="l-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+      </button>
+
+      <div class="l-divider">OR CONTINUE WITH</div>
+
+      <div class="l-sso-grid">
+        <a href="/auth/login?provider=google" class="l-sso">
+          <svg viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A10.99 10.99 0 0 0 12 23z" fill="#34A853"/><path d="M5.84 14.1A6.6 6.6 0 0 1 5.5 12c0-.73.13-1.44.34-2.1V7.07H2.18A11 11 0 0 0 1 12c0 1.78.43 3.46 1.18 4.93l3.66-2.83z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1A11 11 0 0 0 2.18 7.07l3.66 2.83C6.71 7.31 9.14 5.38 12 5.38z" fill="#EA4335"/></svg>
+          Google
+        </a>
+        <a href="/auth/login?provider=github" class="l-sso">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.54 2.87 8.39 6.84 9.75.5.09.69-.22.69-.49 0-.24-.01-.88-.01-1.73-2.78.61-3.37-1.36-3.37-1.36-.46-1.18-1.11-1.49-1.11-1.49-.91-.63.07-.62.07-.62 1 .07 1.53 1.05 1.53 1.05.89 1.55 2.34 1.1 2.91.84.09-.66.35-1.1.63-1.36-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.27 2.75 1.05A9.34 9.34 0 0 1 12 6.96c.85 0 1.71.12 2.5.34 1.91-1.32 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.94-2.34 4.81-4.57 5.06.36.32.68.94.68 1.9 0 1.37-.01 2.48-.01 2.82 0 .27.18.59.69.49C19.13 20.64 22 16.79 22 12.25 22 6.58 17.52 2 12 2z"/></svg>
+          GitHub
+        </a>
+        <a href="/auth/login?provider=microsoft" class="l-sso">
+          <svg viewBox="0 0 24 24"><rect x="3" y="3" width="8.5" height="8.5" fill="#F25022"/><rect x="12.5" y="3" width="8.5" height="8.5" fill="#7FBA00"/><rect x="3" y="12.5" width="8.5" height="8.5" fill="#00A4EF"/><rect x="12.5" y="12.5" width="8.5" height="8.5" fill="#FFB900"/></svg>
+          Microsoft
+        </a>
+        <a href="/auth/login?provider=apple" class="l-sso">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.05 12.64c-.03-2.91 2.39-4.32 2.5-4.39-1.36-1.99-3.48-2.27-4.24-2.3-1.81-.18-3.53 1.07-4.45 1.07-.92 0-2.34-1.04-3.84-1.01-1.98.03-3.8 1.15-4.82 2.92-2.05 3.55-.52 8.81 1.48 11.7.97 1.41 2.13 3.0 3.63 2.95 1.45-.06 2.0-.94 3.76-.94 1.75 0 2.25.94 3.79.91 1.56-.03 2.55-1.44 3.51-2.86 1.1-1.64 1.55-3.22 1.58-3.31-.03-.01-3.03-1.16-3.06-4.6zM14.21 4.07c.79-.96 1.32-2.29 1.18-3.61-1.13.05-2.51.76-3.33 1.71-.73.84-1.37 2.2-1.2 3.5 1.27.1 2.56-.65 3.35-1.6z"/></svg>
+          Apple
+        </a>
+        <span class="l-sso l-sso-wide" style="cursor:default;opacity:0.5;" title="Contact support to enable SAML SSO for your organisation">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v10c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V7"/><path d="M3 7l9 6 9-6"/><path d="M3 7c0-1.1.9-2 2-2h14c1.1 0 2 .9 2 2"/></svg>
+          Continue with SSO
+          <span class="l-sso-lock">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+            SAML
+          </span>
+        </span>
+      </div>
+
+      <p class="l-legal">Protected by enterprise SSO via WorkOS. <a href="#">Trouble signing in?</a></p>
+    </div>
+
+    <p class="l-card-foot">Don't have an account? <a href="/signup">Create one</a></p>
+
+    <div class="l-trust">
+      <span class="l-item"><span class="l-v">4,800+</span> WORKSPACES</span>
+      <span class="l-dot"></span>
+      <span class="l-item">SOC 2 TYPE II</span>
+      <span class="l-dot"></span>
+      <span class="l-item">MCP <span class="l-v">2025-11-25</span></span>
+    </div>
+  </div>
+</main>
+
+<div class="l-corner-mark">MNEMA · <span class="l-v">v2.0</span> · AUTH</div>
+<div class="l-status-pill"><span class="l-signal"></span>ALL SYSTEMS LIVE</div>
+
+<script is:inline>
+  /* Star particles */
+  (function () {
+    var host = document.getElementById('l-stars');
+    for (var i = 0; i < 60; i++) {
+      var s = document.createElement('div');
+      s.className = 'l-star';
+      var sz = 1 + Math.random() * 2.2;
+      s.style.width = s.style.height = sz + 'px';
+      s.style.left = Math.random() * 100 + '%';
+      s.style.top = Math.random() * 100 + '%';
+      s.style.setProperty('--life', (3 + Math.random() * 5).toFixed(1) + 's');
+      s.style.setProperty('--delay', (Math.random() * 5).toFixed(1) + 's');
+      host.appendChild(s);
+    }
+  })();
+
+  /* Workspace chip — read last workspace from localStorage */
+  (function () {
+    try {
+      var ws = localStorage.getItem('mnema-last-workspace');
+      if (ws) {
+        var row = document.getElementById('l-ws-row');
+        var initial = document.getElementById('l-ws-initial');
+        var name = document.getElementById('l-ws-name');
+        initial.textContent = ws.charAt(0).toUpperCase();
+        name.textContent = ws;
+        row.style.display = 'flex';
+
+        document.getElementById('l-ws-switch').addEventListener('click', function (e) {
+          e.preventDefault();
+          row.style.display = 'none';
+        });
+      }
+    } catch (e) {}
+  })();
+
+  /* Mode toggle + submit state */
+  (function () {
+    var emailEl = document.getElementById('l-email');
+    var passEl = document.getElementById('l-pass');
+    var passField = document.getElementById('l-pass-field');
+    var btn = document.getElementById('l-continue-btn');
+    var ctaLabel = document.getElementById('l-cta-label');
+    var modeLink = document.getElementById('l-mode-link');
+    var modePass = document.getElementById('l-mode-pass');
+    var mode = 'link';
+
+    function validate() {
+      var okEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailEl.value.trim());
+      var okPass = mode === 'link' || passEl.value.length >= 6;
+      btn.disabled = !(okEmail && okPass);
+    }
+
+    function setMode(m) {
+      mode = m;
+      modeLink.classList.toggle('active', m === 'link');
+      modePass.classList.toggle('active', m === 'pass');
+      modeLink.setAttribute('aria-selected', String(m === 'link'));
+      modePass.setAttribute('aria-selected', String(m === 'pass'));
+      passField.style.display = m === 'pass' ? 'flex' : 'none';
+      ctaLabel.textContent = m === 'link' ? 'Send sign-in link' : 'Sign in';
+      validate();
+    }
+
+    modeLink.addEventListener('click', function () { setMode('link'); });
+    modePass.addEventListener('click', function () { setMode('pass'); });
+    emailEl.addEventListener('input', validate);
+    passEl.addEventListener('input', validate);
+
+    var SPINNER = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"><animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="0.8s" repeatCount="indefinite"/></path></svg>';
+
+    btn.addEventListener('click', function () {
+      if (btn.disabled) return;
+      var email = emailEl.value.trim();
+      btn.disabled = true;
+
+      if (mode === 'link') {
+        btn.innerHTML = SPINNER + ' Sending link…';
+        fetch('/auth/send-magic-link', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ email: email }),
+        })
+          .then(function (res) {
+            if (res.ok) {
+              btn.innerHTML = '✓ Code sent — check your inbox';
+              btn.style.background = '#6BE39B';
+              btn.style.color = '#07140C';
+              btn.style.borderColor = '#6BE39B';
+              // Redirect to OTP entry page after a brief success display
+              setTimeout(function () {
+                window.location.href = '/auth/verify-code?email=' + encodeURIComponent(email);
+              }, 1000);
+            } else {
+              btn.disabled = false;
+              btn.innerHTML = '✗ Send failed — try again';
+              btn.style.background = '#f87171';
+              btn.style.color = '#fff';
+              btn.style.borderColor = '#f87171';
+              setTimeout(function () {
+                btn.innerHTML = ctaLabel.textContent;
+                btn.style.cssText = '';
+                validate();
+              }, 3000);
+            }
+          })
+          .catch(function () {
+            btn.disabled = false;
+            btn.innerHTML = '✗ Network error — try again';
+            setTimeout(function () { btn.innerHTML = ctaLabel.textContent; btn.style.cssText = ''; validate(); }, 3000);
+          });
+      } else {
+        var password = passEl.value;
+        btn.innerHTML = SPINNER + ' Signing in…';
+        fetch('/auth/password', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ email: email, password: password }),
+        })
+          .then(function (res) {
+            return res.json().then(function (d) { return { ok: res.ok, data: d }; });
+          })
+          .then(function (r) {
+            if (r.ok) {
+              btn.innerHTML = '✓ Welcome back';
+              btn.style.background = '#6BE39B';
+              btn.style.color = '#07140C';
+              btn.style.borderColor = '#6BE39B';
+              window.location.href = r.data.resume_url || '/app';
+            } else {
+              btn.disabled = false;
+              var msg = r.data.error === 'invalid_credentials'
+                ? '✗ Invalid email or password'
+                : '✗ Sign-in failed — try again';
+              btn.innerHTML = msg;
+              btn.style.background = '#f87171';
+              btn.style.color = '#fff';
+              btn.style.borderColor = '#f87171';
+              setTimeout(function () { btn.innerHTML = ctaLabel.textContent; btn.style.cssText = ''; validate(); }, 3000);
+            }
+          })
+          .catch(function () {
+            btn.disabled = false;
+            btn.innerHTML = '✗ Network error — try again';
+            setTimeout(function () { btn.innerHTML = ctaLabel.textContent; btn.style.cssText = ''; validate(); }, 3000);
+          });
+      }
+    });
+
+    setMode('link');
+  })();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,6 @@
+{
+  "buildCommand": "pnpm --filter @boppl/schema build && pnpm --filter @boppl/web build",
+  "installCommand": "pnpm install --frozen-lockfile=false",
+  "framework": "astro",
+  "outputDirectory": "apps/web/.vercel/output"
+}

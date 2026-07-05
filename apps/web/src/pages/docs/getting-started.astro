@@ -1,0 +1,131 @@
+---
+import PublicLayout from '../../layouts/PublicLayout.astro';
+---
+
+<PublicLayout
+  title="Getting started — Mnema docs"
+  description="A 5-minute tour of Mnema: create a doc, invite a teammate, search, autocomplete, connect Claude."
+  pathname="/docs/getting-started"
+>
+  <article class="max-w-[680px] mx-auto px-6 pt-[80px] pb-[96px]">
+    <a
+      href="/docs"
+      class="transition-colors inline-block mb-8"
+      style="font-size: 12px; color: var(--text-tertiary);"
+      onmouseover="this.style.color='var(--text-primary)'"
+      onmouseout="this.style.color='var(--text-tertiary)'"
+    >
+      ← All docs
+    </a>
+
+    <span
+      class="block mb-3 font-mono uppercase"
+      style="font-size: 11px; letter-spacing: 0.08em; color: var(--text-tertiary);"
+    >
+      Getting started
+    </span>
+    <h1
+      style="font-size: 28px; line-height: 1.3; letter-spacing: -0.01em; font-weight: 500; color: var(--text-primary);"
+    >
+      Getting started
+    </h1>
+    <p
+      class="mt-3 mb-12"
+      style="font-size: 15px; color: var(--text-secondary);"
+    >
+      A 5-minute tour. By the end, your team has a working doc and Claude can read it.
+    </p>
+
+    <ol class="space-y-8 list-none">
+      {[
+        {
+          heading: 'Create your first doc',
+          body: (
+            <span>
+              From <a href="/app" style="color: var(--text-primary);" class="underline">your workspace</a>, click{' '}
+              <span style="color: var(--text-primary);">New doc</span>. Give it a title. Start typing — Mnema
+              is a live markdown editor. Press{' '}
+              <code style="font-family: var(--font-mono); font-size: 12px; background: var(--surface-sunken); border-radius: var(--radius-sm); padding: 2px 6px; color: var(--text-primary);">/</code>
+              {' '}to insert blocks: headings, code, math, mermaid diagrams.
+            </span>
+          ),
+        },
+        {
+          heading: 'Invite a teammate',
+          body: (
+            <span>
+              Open <span style="color: var(--text-primary);">Settings → Members</span> and send an invite by email.
+              They get a magic link that lands them straight in the workspace. Roles:{' '}
+              <span style="color: var(--text-primary);">owner</span> manages billing and people,{' '}
+              <span style="color: var(--text-primary);">editor</span> writes and comments,{' '}
+              <span style="color: var(--text-primary);">viewer</span> reads.
+            </span>
+          ),
+        },
+        {
+          heading: 'Try search',
+          body: (
+            <span>
+              Hybrid search runs over every doc in the workspace. Search for an exact phrase, a topic, or a
+              question. Results rank by both keyword match and semantic similarity — typing{' '}
+              <span style="color: var(--text-primary);">"rate limiting"</span> surfaces docs about throttling
+              even if they don't use the exact phrase.
+            </span>
+          ),
+        },
+        {
+          heading: 'Use autocomplete',
+          body: (
+            <span>
+              As you type, Mnema suggests how a sentence could continue based on the surrounding doc. Press{' '}
+              <code style="font-family: var(--font-mono); font-size: 12px; background: var(--surface-sunken); border-radius: var(--radius-sm); padding: 2px 6px; color: var(--text-primary);">Tab</code>
+              {' '}to accept the suggestion, or just keep typing to dismiss it. Autocomplete is included on Pro and Team plans.
+            </span>
+          ),
+        },
+        {
+          heading: 'Connect Claude and (next) build a flow',
+          body: (
+            <span>
+              Open <a href="/docs/connect" style="color: var(--text-primary);" class="underline">Connect to Claude</a> and follow the 30-second setup.
+              Once your Claude connector is active, Claude can read every doc in your workspace through MCP.
+              The <a href="/docs/flows" style="color: var(--text-primary);" class="underline">next release adds flows</a> — sequenced content with step-by-step instructions —
+              for when "read everything" isn't precise enough.
+            </span>
+          ),
+        },
+      ].map((step, i) => (
+        <li class="flex gap-4">
+          <div
+            class="flex-shrink-0 flex items-center justify-center font-mono font-medium"
+            style="width: 28px; height: 28px; border-radius: 50%; background: var(--surface-elevated); border: 1px solid var(--border-default); font-size: 13px; color: var(--text-primary);"
+          >
+            {i + 1}
+          </div>
+          <div class="pt-0.5">
+            <h2 style="font-size: 16px; font-weight: 500; color: var(--text-primary); line-height: 1.5; margin-bottom: 4px;">
+              {step.heading}
+            </h2>
+            <p style="font-size: 14px; color: var(--text-secondary); line-height: 1.65;">
+              {step.body}
+            </p>
+          </div>
+        </li>
+      ))}
+    </ol>
+
+    <div
+      class="mt-16 p-6"
+      style="background: var(--surface-overlay); border: 1px solid var(--border-default); border-radius: var(--radius-lg);"
+    >
+      <h3 style="font-size: 14px; font-weight: 500; color: var(--text-primary); margin-bottom: 8px;">
+        What's next
+      </h3>
+      <p style="font-size: 14px; color: var(--text-secondary); line-height: 1.65;">
+        Explore <a href="/docs/connect" class="underline" style="color: var(--text-primary);">the connector setup</a>, browse{' '}
+        <a href="/app" class="underline" style="color: var(--text-primary);">the pricing tiers</a> when your team grows past the free limits,
+        or just keep writing — Mnema gets out of the way and lets the docs do the work.
+      </p>
+    </div>
+  </article>
+</PublicLayout>

@@ -1,0 +1,28 @@
+name: core-boundary
+
+# Phase 5 (Open-Core) — the permanent assertion that the public core stays buildable
+# and bootable with the enterprise (ee) surface absent. On the public `mnema` repo the
+# ee code isn't present at all, so scripts/verify-core-only.sh proving tsc passes with
+# the ee entrypoints removed is exactly what keeps the boundary from regressing.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  core-only:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build workspace packages
+        run: pnpm -r --filter "./packages/**" build
+      - name: Core-only boundary check (ee-absent compile)
+        working-directory: apps/api
+        run: bash scripts/verify-core-only.sh

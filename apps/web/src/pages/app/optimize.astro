@@ -1,0 +1,10 @@
+---
+import AppLayout from '../../layouts/AppLayout.astro';
+import { OptimizationPage } from '../../components/dev/OptimizationPage';
+
+const auth = Astro.locals.auth;
+if (!auth) return Astro.redirect('/auth/login');
+---
+<AppLayout title="Optimize">
+  <OptimizationPage client:load />
+</AppLayout>

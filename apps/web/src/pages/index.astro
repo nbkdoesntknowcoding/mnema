@@ -1,0 +1,5 @@
+---
+// Public/self-host build: no marketing site. Send the root at the app; the auth
+// middleware forwards unauthenticated visitors to /auth/local.
+return Astro.redirect('/app');
+---

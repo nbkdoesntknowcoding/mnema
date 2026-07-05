@@ -1,0 +1,148 @@
+# Mnema — self-host stack (carved to the public repo root as docker-compose.yml).
+#
+# Paths are ROOT-relative because this file ships at the repo root. To run it from
+# its authored location in-repo (Mnema-PR) use --project-directory:
+#   docker compose -f infra/docker-compose.selfhost.yml --project-directory . up -d
+#
+# Prereq: run ./scripts/self-host-init.sh first — it writes .env and generates the
+# OAuth keypair into ./keys. Comes up on a 4 GB machine (no OnlyOffice/admin extras).
+#
+# Networking model (single host):
+#   • Browser → web (published :4321) → same-origin /api/* proxied server-side to the api.
+#     So PUBLIC_API_URL is SSR-only and points at the internal service (http://api:8080).
+#   • Browser → collab WebSocket DIRECTLY, so collab is published and PUBLIC_COLLAB_URL
+#     must be browser-reachable (ws://localhost:1234 local; wss://<host>/collab behind a
+#     TLS reverse proxy — see README).
+#   • MCP clients (Claude/Cursor/…) connect to the api's /mcp, so the api is published too.
+
+name: mnema
+
+x-restart: &restart
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    <<: *restart
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mnema}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-mnema}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mnema} -d ${POSTGRES_DB:-mnema}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks: [internal]
+    # Not published — internal network only.
+
+  redis:
+    image: redis:7.4-alpine
+    <<: *restart
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    networks: [internal]
+    # Not published — internal network only.
+
+  # One-shot: apply the idempotent SQL migrations, then exit. api/collab/workers wait
+  # for it to complete. Uses the pgvector image because it ships psql (the node:alpine
+  # app image does not), and the drizzle ledger is intentionally behind — migrations are
+  # psql-applied. Migrations are written idempotent (IF NOT EXISTS / DO-guards), so a
+  # re-run on restart is safe (per-statement errors are non-fatal).
+  migrate:
+    image: pgvector/pgvector:pg16
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-mnema}
+      PGDATABASE: ${POSTGRES_DB:-mnema}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?}
+    volumes:
+      - ./apps/api/drizzle/migrations:/migrations:ro
+    command:
+      - sh
+      - -c
+      - 'for f in /migrations/*.sql; do echo "applying $$(basename "$$f")"; psql -f "$$f" || echo "  (non-fatal on re-run)"; done; echo "migrations complete"'
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [internal]
+
+  api:
+    build: { context: ., dockerfile: apps/api/Dockerfile }
+    <<: *restart
+    ports: ["127.0.0.1:8080:8080"]
+    env_file: [.env]
+    environment:
+      NODE_ENV: production
+      COLLAB_INTERNAL_URL: http://collab:1234
+    volumes:
+      - ./keys:/app/keys:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+      migrate:  { condition: service_completed_successfully }
+    networks: [internal]
+
+  collab:
+    build: { context: ., dockerfile: apps/api/Dockerfile.collab }
+    <<: *restart
+    ports: ["127.0.0.1:1234:1234"]
+    env_file: [.env]
+    environment:
+      NODE_ENV: production
+      COLLAB_PORT: "1234"
+    depends_on:
+      postgres: { condition: service_healthy }
+      migrate:  { condition: service_completed_successfully }
+    networks: [internal]
+
+  workers:
+    build: { context: ., dockerfile: apps/api/Dockerfile.workers }
+    <<: *restart
+    env_file: [.env]
+    environment:
+      NODE_ENV: production
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+      migrate:  { condition: service_completed_successfully }
+    networks: [internal]
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        # PUBLIC_API_URL is SSR-only (browser uses the same-origin /api proxy), so it
+        # points at the internal api service — NOT the public hostname.
+        PUBLIC_API_URL: http://api:8080
+        # Browser-reachable: ws://localhost:1234 local; wss://<host>/collab behind TLS.
+        PUBLIC_COLLAB_URL: ${PUBLIC_COLLAB_URL:-ws://localhost:1234}
+        PUBLIC_AUTH_PROVIDER: ${PUBLIC_AUTH_PROVIDER:-password}
+        PUBLIC_SITE_URL: ${PUBLIC_SITE_URL:-http://localhost:4321}
+    <<: *restart
+    ports: ["127.0.0.1:4321:4321"]
+    env_file: [.env]
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "4321"
+      PUBLIC_API_URL: http://api:8080
+    depends_on:
+      api: { condition: service_healthy }
+    networks: [internal]
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  pgdata:
+  redis_data:

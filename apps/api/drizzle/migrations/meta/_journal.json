@@ -1,0 +1,307 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1747200000000,
+      "tag": "0000_initial_schema",
+      "breakpoints": false
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1747286400000,
+      "tag": "0001_app_user_role",
+      "breakpoints": false
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1747987200000,
+      "tag": "0002_invitations_and_system_role",
+      "breakpoints": false
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1747987200001,
+      "tag": "0003_workspace_members_rls_and_public_lookup",
+      "breakpoints": false
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1778889600000,
+      "tag": "0004_comments_threads_versions_read_state",
+      "breakpoints": false
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1779373156544,
+      "tag": "0005_doc_type",
+      "breakpoints": false
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1779373156545,
+      "tag": "0006_flows_v1",
+      "breakpoints": false
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1779373156546,
+      "tag": "0007_example_flow_backfill",
+      "breakpoints": false
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1779373156547,
+      "tag": "0008_folders",
+      "breakpoints": false
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1779373156548,
+      "tag": "0009_folder_nesting",
+      "breakpoints": false
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1779373156549,
+      "tag": "0010_mcp_tokens",
+      "breakpoints": false
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1779373156550,
+      "tag": "0011_oauth_v1",
+      "breakpoints": false
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1779373156551,
+      "tag": "0012_folders_soft_delete",
+      "breakpoints": false
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1779373156552,
+      "tag": "0013_doc_versions_author_kind",
+      "breakpoints": false
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1779450000000,
+      "tag": "0014_notifications",
+      "breakpoints": false
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1748217600000,
+      "tag": "0015_subscriptions_billing_tier",
+      "breakpoints": false
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1748649600000,
+      "tag": "0016_agentlens_phase1_tasks",
+      "breakpoints": false
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1748736000000,
+      "tag": "0017_agentlens_phase2_execution",
+      "breakpoints": false
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1748822400000,
+      "tag": "0018_agentlens_phase3_intelligence",
+      "breakpoints": false
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1748908800000,
+      "tag": "0019_phase4_api_keys",
+      "breakpoints": false
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1748995200000,
+      "tag": "0020_optimization_materialized_view",
+      "breakpoints": false
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1748995200001,
+      "tag": "0021_doc_sharing",
+      "breakpoints": false
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1780931052462,
+      "tag": "0022_exotic_maggott",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1781103290439,
+      "tag": "0023_daffy_thunderball",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1781187719341,
+      "tag": "0024_knowledge_graph_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1781280000000,
+      "tag": "0025_project_scoping",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1781280000001,
+      "tag": "0026_waitlist",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1781280000002,
+      "tag": "0027_project_members_and_key_scope",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1781280000003,
+      "tag": "0028_project_rls_functions",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1781280000004,
+      "tag": "0029_project_rls_policies",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1781280000005,
+      "tag": "0030_api_key_act_as_user",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1781280000006,
+      "tag": "0031_participant_aliases",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1781280000007,
+      "tag": "0032_meetings",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1781280000008,
+      "tag": "0033_meeting_participant_verified",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1781280000009,
+      "tag": "0034_teams_org_roles",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1781280000010,
+      "tag": "0035_user_org_profiles",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1781280000011,
+      "tag": "0036_doc_acl_matrix",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1781280000012,
+      "tag": "0037_iam_audit_log",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1781280000013,
+      "tag": "0038_meeting_schema_additions",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1781280000014,
+      "tag": "0039_folders_system_type",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1781280000015,
+      "tag": "0040_invitations_org_role",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1782000000000,
+      "tag": "0041_calendar_phase_c",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1782100000000,
+      "tag": "0042_flow_share",
+      "breakpoints": true
+    }
+  ]
+}

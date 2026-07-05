@@ -1,0 +1,288 @@
+---
+/**
+ * Magic auth OTP verification page.
+ *
+ * After /auth/send-magic-link sends a 6-digit code, we redirect here.
+ * The email is passed as a query param so the JS handler knows where to
+ * submit. On success /auth/verify-magic sets the session and sends to /app.
+ */
+import '../../styles/global.css';
+
+const auth = Astro.locals.auth;
+if (auth) return Astro.redirect('/app');
+
+const email = Astro.url.searchParams.get('email') ?? '';
+const error = Astro.url.searchParams.get('error');
+---
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mnema · Check your inbox</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+  <link rel="preload" href="/fonts/geist/Geist-Regular.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="preload" href="/fonts/geist/Geist-Medium.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="preload" href="/fonts/geist/Geist-SemiBold.woff2" as="font" type="font/woff2" crossorigin />
+
+  <script is:inline>
+    (function () {
+      try {
+        var s = localStorage.getItem('mnema-theme');
+        document.documentElement.setAttribute('data-theme', s === 'light' ? 'light' : 'dark');
+      } catch (e) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    })();
+  </script>
+
+  <style is:global>
+    :root {
+      --accent: #F4F5F7; --accent-rgb: 244,245,247;
+      --aux-1-rgb: 124,156,255; --aux-2-rgb: 200,162,255; --aux-3-rgb: 255,144,120;
+      --intensity: 0.34; --anim-mult: 1.2;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; height: 100%; }
+    body {
+      background: var(--canvas); color: var(--ink);
+      font-family: var(--sans); -webkit-font-smoothing: antialiased;
+      font-feature-settings: "ss01"; min-height: 100vh; overflow-x: hidden;
+    }
+    .v-bg { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 0; }
+    .v-bg .v-aurora {
+      position: absolute; inset: -20%;
+      background:
+        radial-gradient(circle at 18% 30%, rgba(var(--accent-rgb),.32) 0%, transparent 45%),
+        radial-gradient(circle at 82% 55%, rgba(var(--aux-1-rgb),.30) 0%, transparent 50%),
+        radial-gradient(circle at 50% 90%, rgba(var(--aux-3-rgb),.22) 0%, transparent 50%);
+      filter: blur(50px); opacity: calc(var(--intensity) * 1.1);
+    }
+    .v-topbar {
+      height: 64px; padding: 0 32px;
+      display: flex; align-items: center;
+      position: relative; z-index: 2;
+    }
+    .v-brand {
+      display: inline-flex; align-items: center; gap: 12px;
+      font: 600 16px/1 var(--sans); letter-spacing: -.01em;
+      color: var(--ink); text-decoration: none;
+    }
+    .v-glyph {
+      width: 30px; height: 30px; border-radius: 9px;
+      overflow: hidden; display: inline-flex; flex-shrink: 0;
+    }
+    .v-main {
+      display: flex; align-items: center; justify-content: center;
+      padding: 32px 24px 80px; position: relative; z-index: 2;
+    }
+    .v-card {
+      width: 420px; max-width: 100%;
+      background: rgba(6,7,10,.72);
+      backdrop-filter: blur(24px) saturate(140%);
+      border-radius: 20px; padding: 36px 36px 30px;
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,.07),
+        inset 0 0 0 1px rgba(255,255,255,.05),
+        0 60px 100px -40px rgba(0,0,0,.7);
+    }
+    [data-theme="light"] .v-card {
+      background: rgba(255,255,255,.78);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.6), 0 30px 60px -30px rgba(10,11,13,.18);
+    }
+    .v-icon {
+      width: 56px; height: 56px; background: var(--surface-2);
+      border-radius: 16px; display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 22px; font-size: 28px;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.1), inset 0 0 0 1px rgba(255,255,255,.06);
+    }
+    h1 { margin: 0 0 8px; font: 600 24px/1.2 var(--sans); letter-spacing: -.02em; text-align: center; }
+    .v-sub { margin: 0 0 28px; text-align: center; font-size: 14px; color: var(--ink-muted); line-height: 1.5; }
+    .v-email-highlight { color: var(--ink); font-weight: 500; }
+    .v-field { display: flex; flex-direction: column; gap: 7px; margin-bottom: 12px; }
+    .v-field label { font: 500 12.5px/1 var(--sans); color: var(--ink-soft); }
+    .v-otp-row { display: flex; gap: 8px; }
+    .v-otp {
+      flex: 1; width: 0;
+      font: 600 22px/1 var(--sans); text-align: center;
+      padding: 14px 4px; border-radius: 10px;
+      background: rgba(255,255,255,.03); color: var(--ink);
+      border: 1px solid rgba(255,255,255,.10); outline: none;
+      transition: border-color 140ms ease, box-shadow 140ms ease;
+      letter-spacing: .08em;
+    }
+    [data-theme="light"] .v-otp { background: rgba(10,11,13,.025); border-color: rgba(10,11,13,.12); }
+    .v-otp:focus {
+      border-color: rgba(var(--accent-rgb),.6);
+      box-shadow: 0 0 0 3px rgba(var(--accent-rgb),.12);
+    }
+    .v-btn {
+      width: 100%; margin-top: 6px;
+      font: 600 14px/1 var(--sans); padding: 14px 18px;
+      border-radius: 10px; background: var(--ink); color: var(--on-ink);
+      border: 1px solid var(--ink); cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      transition: transform 100ms ease, background 140ms ease;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.25);
+    }
+    .v-btn:hover { background: rgba(255,255,255,.92); }
+    [data-theme="light"] .v-btn:hover { background: #1A1B1F; }
+    .v-btn:disabled { opacity: .5; cursor: not-allowed; }
+    .v-resend { text-align: center; margin-top: 16px; font-size: 13px; color: var(--ink-muted); }
+    .v-resend button {
+      background: none; border: none; cursor: pointer; padding: 0;
+      color: var(--ink); font: 500 13px/1 var(--sans); text-decoration: underline;
+    }
+    .v-err {
+      margin: 0 0 16px; padding: 10px 14px;
+      background: rgba(248,113,113,.12); border: 1px solid rgba(248,113,113,.28);
+      border-radius: 8px; font-size: 13px; color: #fca5a5; text-align: center;
+      display: none;
+    }
+    .v-err.show { display: block; }
+    .v-back { margin-top: 22px; text-align: center; font-size: 13.5px; color: var(--ink-muted); }
+    .v-back a { color: var(--ink); font-weight: 500; text-decoration: none; border-bottom: 1px solid var(--ink-faint); }
+  </style>
+</head>
+<body>
+
+<div class="v-bg">
+  <div class="v-aurora"></div>
+</div>
+
+<header class="v-topbar">
+  <a href="/" class="v-brand">
+    <span class="v-glyph"><img src="/logo.svg" width="30" height="30" alt="Mnema" draggable="false"></span>
+    <span>Mnema</span>
+  </a>
+</header>
+
+<main class="v-main">
+  <div class="v-card">
+    <div class="v-icon">📬</div>
+    <h1>Check your inbox</h1>
+    <p class="v-sub">
+      We sent a 6-digit code to<br/>
+      <span class="v-email-highlight" id="v-email-display">{email || 'your email'}</span>
+    </p>
+
+    <div class="v-err" id="v-err">
+      {error === 'invalid_code' ? 'That code is incorrect or expired. Try again.' :
+       error === 'verify_failed' ? 'Verification failed. Request a new code.' :
+       error ? 'Something went wrong. Please try again.' : ''}
+    </div>
+
+    <div class="v-field">
+      <label>6-digit code</label>
+      <input
+        class="v-otp"
+        id="v-code"
+        type="text"
+        inputmode="numeric"
+        pattern="[0-9]*"
+        maxlength="6"
+        placeholder="123456"
+        autocomplete="one-time-code"
+      />
+    </div>
+
+    <button class="v-btn" id="v-btn" disabled>Verify code</button>
+
+    <p class="v-resend">
+      Didn't get it? <button id="v-resend-btn">Resend code</button>
+    </p>
+  </div>
+
+  <p class="v-back">Wrong email? <a href="/login">Back to sign in</a></p>
+</main>
+
+<script is:inline define:vars={{ email, error }}>
+  (function () {
+    var codeEl = document.getElementById('v-code');
+    var btn = document.getElementById('v-btn');
+    var errEl = document.getElementById('v-err');
+    var resendBtn = document.getElementById('v-resend-btn');
+
+    // Show error from URL if any
+    if (error && error !== 'invalid_code' && error !== 'verify_failed') {
+      errEl.textContent = 'Something went wrong. Please try again.';
+      errEl.classList.add('show');
+    } else if (error) {
+      errEl.classList.add('show');
+    }
+
+    codeEl.addEventListener('input', function () {
+      var val = codeEl.value.replace(/\D/g, '').slice(0, 6);
+      codeEl.value = val;
+      btn.disabled = val.length !== 6;
+    });
+
+    codeEl.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && !btn.disabled) btn.click();
+    });
+
+    btn.addEventListener('click', function () {
+      if (btn.disabled) return;
+      var code = codeEl.value.trim();
+      btn.disabled = true;
+      btn.textContent = 'Verifying…';
+      errEl.classList.remove('show');
+
+      fetch('/auth/verify-magic', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: email, code: code }),
+      })
+        .then(function (res) { return res.json().then(function (d) { return { ok: res.ok, data: d }; }); })
+        .then(function (r) {
+          if (r.ok) {
+            btn.textContent = '✓ Signed in';
+            btn.style.background = '#6BE39B';
+            btn.style.color = '#07140C';
+            window.location.href = r.data.resume_url || '/app';
+          } else {
+            btn.disabled = false;
+            btn.textContent = 'Verify code';
+            errEl.textContent =
+              r.data.error === 'invalid_code' ? 'That code is incorrect or expired.' :
+              r.data.error === 'no_account' ? 'No Mnema account for this email. Sign up first.' :
+              'Verification failed. Try again.';
+            errEl.classList.add('show');
+          }
+        })
+        .catch(function () {
+          btn.disabled = false;
+          btn.textContent = 'Verify code';
+          errEl.textContent = 'Network error. Please try again.';
+          errEl.classList.add('show');
+        });
+    });
+
+    resendBtn.addEventListener('click', function () {
+      if (!email) return;
+      resendBtn.disabled = true;
+      resendBtn.textContent = 'Sending…';
+      fetch('/auth/send-magic-link', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: email }),
+      })
+        .then(function (res) {
+          resendBtn.textContent = res.ok ? 'Sent!' : 'Failed — try again';
+          setTimeout(function () {
+            resendBtn.disabled = false;
+            resendBtn.textContent = 'Resend code';
+          }, 3000);
+        })
+        .catch(function () {
+          resendBtn.disabled = false;
+          resendBtn.textContent = 'Resend code';
+        });
+    });
+  })();
+</script>
+
+</body>
+</html>
