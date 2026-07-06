@@ -53,6 +53,9 @@ COPY apps/api/src/templates ./apps/api/dist/templates
 # Email HTML templates (inliner reads dist/emails/html/*.html at runtime)
 COPY apps/api/src/emails/html ./apps/api/dist/emails/html
 
+HEALTHCHECK --interval=10s --timeout=5s --retries=12 --start-period=40s \
+  CMD node -e "fetch('http://localhost:8080/health').then(r => process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
 EXPOSE 8080
 ENV NODE_ENV=production
 
