@@ -13,6 +13,7 @@ Pick your client:
 - [ChatGPT](./chatgpt.md) — Business/Enterprise connectors
 - [Cursor](./cursor.md)
 - [Windsurf](./windsurf.md)
+- [Antigravity](./antigravity.md) — includes the `mnema-direct-upload` skill for popup-free batch uploads
 - [Embed in your own app](./api-integration.md) — via the REST API + an API key
 
 Not connecting an assistant? Use the [REST API](../api/) directly.
