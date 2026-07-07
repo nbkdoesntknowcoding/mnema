@@ -138,6 +138,8 @@ export function OptimizationPage() {
   const [dismissing, setDismissing] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [prompts, setPrompts] = useState<Record<string, string>>({});
+  const [generating, setGenerating] = useState<string | null>(null);
   const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const showToast = (msg: string) => {
@@ -185,6 +187,30 @@ export function OptimizationPage() {
     await fetch(`/api/optimization/findings/${id}/dismiss`, { method: 'POST' });
     setFindings((prev) => prev.filter((f) => f.id !== id));
     setDismissing(null);
+  };
+
+  const getPrompt = async (id: string) => {
+    setGenerating(id);
+    try {
+      const res = await fetch(`/api/optimization/findings/${id}/prompt`, { method: 'POST' });
+      const data = (await res.json()) as { prompt?: string };
+      if (data.prompt) setPrompts((prev) => ({ ...prev, [id]: data.prompt! }));
+      else showToast('Prompt generation failed.');
+    } catch {
+      showToast('Prompt generation failed.');
+    }
+    setGenerating(null);
+  };
+
+  const copyPrompt = async (id: string) => {
+    const text = prompts[id];
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast('Prompt copied — paste it to your agent.');
+    } catch {
+      showToast('Copy failed — select the text manually.');
+    }
   };
 
   const runManual = async () => {
@@ -495,6 +521,75 @@ export function OptimizationPage() {
                     }}>
                       <span style={{ color: T.amber }}>SUGGESTED ACTION · </span>
                       {f.suggestedAction}
+                    </div>
+
+                    {/* Agent prompt — generated on demand, paste into any agent */}
+                    <div style={{ marginTop: 12 }}>
+                      {prompts[f.id] ? (
+                        <>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                            <span style={{
+                              fontFamily:    T.fontMono,
+                              fontSize:      11,
+                              fontWeight:    500,
+                              color:         T.textMuted,
+                              letterSpacing: '0.06em',
+                              textTransform: 'uppercase',
+                            }}>
+                              Agent Prompt
+                            </span>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); void copyPrompt(f.id); }}
+                              style={{
+                                background:   T.surface2,
+                                color:        T.textPrimary,
+                                border:       `0.5px solid ${T.glassBorder}`,
+                                fontFamily:   T.fontUI,
+                                fontSize:     11,
+                                fontWeight:   500,
+                                padding:      '4px 10px',
+                                borderRadius: 6,
+                                cursor:       'pointer',
+                              }}
+                            >
+                              Copy
+                            </button>
+                          </div>
+                          <div style={{
+                            padding:      '10px 12px',
+                            background:   '#111111',
+                            borderRadius: 6,
+                            border:       `0.5px solid ${T.line}`,
+                            fontFamily:   T.fontMono,
+                            fontSize:     11.5,
+                            lineHeight:   '1.55',
+                            color:        T.textSecondary,
+                            whiteSpace:   'pre-wrap',
+                            userSelect:   'text',
+                          }}>
+                            {prompts[f.id]}
+                          </div>
+                        </>
+                      ) : (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); void getPrompt(f.id); }}
+                          disabled={generating === f.id}
+                          style={{
+                            background:   T.surface2,
+                            color:        T.textPrimary,
+                            border:       `0.5px solid ${T.glassBorder}`,
+                            fontFamily:   T.fontUI,
+                            fontSize:     11.5,
+                            fontWeight:   500,
+                            padding:      '6px 14px',
+                            borderRadius: 6,
+                            cursor:       generating === f.id ? 'wait' : 'pointer',
+                            opacity:      generating === f.id ? 0.6 : 1,
+                          }}
+                        >
+                          {generating === f.id ? 'Generating…' : '✦ Get agent prompt'}
+                        </button>
+                      )}
                     </div>
                   </div>
                   <button

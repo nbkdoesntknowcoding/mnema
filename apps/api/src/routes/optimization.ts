@@ -1,9 +1,10 @@
 import { and, count, desc, eq, sql } from 'drizzle-orm';
 import type { FastifyPluginAsync } from 'fastify';
 import { withTenant } from '../db/with-tenant.js';
-import { optimizationFindings, fixHistory } from '../db/schema.js';
+import { optimizationFindings, fixHistory, tasks } from '../db/schema.js';
 import { requireDevProjectMode } from '../plugins/dev-mode.js';
 import { runOptimizationForWorkspace } from '../lib/dev/optimization/runner.js';
+import { generateOptimizationPrompt } from '../lib/dev/optimization/prompt.js';
 
 // In-memory rate limiter: workspace_id → last manual run timestamps
 const manualRunLog = new Map<string, number[]>();
@@ -97,7 +98,11 @@ export const optimizationRoutes: FastifyPluginAsync = async (app) => {
         .where(eq(optimizationFindings.id, id)),
     );
 
-    // If finding has a taskId, append suggestion to task description
+    // If finding has a taskId, append the suggestion to the task description
+    // AND surface it through retry_fix_hint — that's the field get_next_task
+    // reads out to agents ("Fix hint from last attempt"), so applying a
+    // finding actually reaches the next agent that picks the task up
+    // (claim_task clears the hint once consumed).
     if (finding.taskId) {
       const taskId = finding.taskId;
       const suggestedAction = finding.suggestedAction;
@@ -105,7 +110,8 @@ export const optimizationRoutes: FastifyPluginAsync = async (app) => {
       await withTenant(tenantId, (tx) =>
         tx.execute(sql`
           UPDATE tasks
-          SET description = COALESCE(description, '') || ${'\n\n---\n**Optimization applied:** ' + suggestedAction}
+          SET description = COALESCE(description, '') || ${'\n\n---\n**Optimization applied:** ' + suggestedAction},
+              retry_fix_hint = ${suggestedAction}
           WHERE id = ${taskId}
             AND workspace_id = ${tenantId}
         `),
@@ -113,6 +119,68 @@ export const optimizationRoutes: FastifyPluginAsync = async (app) => {
     }
 
     return { ok: true };
+  });
+
+  // POST /api/optimization/findings/:id/prompt
+  // Generates (and caches on the finding) a paste-ready agent prompt for the
+  // finding — LLM-backed when ANTHROPIC_API_KEY is set, static template
+  // otherwise. Re-requests return the cached prompt without re-billing.
+  app.post('/api/optimization/findings/:id/prompt', async (req, reply) => {
+    if (!req.auth) return reply.code(401).send({ error: 'unauthorized' });
+    const { id } = req.params as { id: string };
+
+    const rows = await withTenant(req.auth.tenant_id, (tx) =>
+      tx
+        .select()
+        .from(optimizationFindings)
+        .where(and(
+          eq(optimizationFindings.id, id),
+          eq(optimizationFindings.workspaceId, req.auth!.tenant_id),
+        ))
+        .limit(1),
+    );
+    const finding = rows[0];
+    if (!finding) return reply.code(404).send({ error: 'finding not found' });
+
+    const cached = (finding.metadata as Record<string, unknown> | null)?.generatedPrompt;
+    if (typeof cached === 'string' && cached.length > 0) {
+      return { prompt: cached, cached: true };
+    }
+
+    let taskTitle: string | null = null;
+    if (finding.taskId) {
+      const taskRows = await withTenant(req.auth.tenant_id, (tx) =>
+        tx
+          .select({ title: tasks.title })
+          .from(tasks)
+          .where(eq(tasks.id, finding.taskId!))
+          .limit(1),
+      );
+      taskTitle = taskRows[0]?.title ?? null;
+    }
+
+    const generated = await generateOptimizationPrompt({
+      rule:            finding.rule,
+      description:     finding.description,
+      suggestedAction: finding.suggestedAction,
+      taskTitle,
+    });
+
+    await withTenant(req.auth.tenant_id, (tx) =>
+      tx
+        .update(optimizationFindings)
+        .set({
+          metadata: {
+            ...((finding.metadata as Record<string, unknown> | null) ?? {}),
+            generatedPrompt:      generated.prompt,
+            generatedPromptModel: generated.model,
+            generatedPromptAt:    new Date().toISOString(),
+          },
+        })
+        .where(eq(optimizationFindings.id, id)),
+    );
+
+    return { prompt: generated.prompt, model: generated.model, usedFallback: generated.usedFallback, cached: false };
   });
 
   // POST /api/optimization/findings/:id/dismiss
