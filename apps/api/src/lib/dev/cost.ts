@@ -31,12 +31,25 @@ export async function calculateCost(
   modelId: string,
   usage: TokenUsage,
 ): Promise<number> {
-  const pricing = await db.query.modelPricing.findFirst({
+  let pricing = await db.query.modelPricing.findFirst({
     where: and(
       eq(modelPricing.modelId, modelId),
       eq(modelPricing.isActive, true),
     ),
   });
+
+  if (!pricing) {
+    // Agents report full dated model IDs (e.g. claude-haiku-4-5-20251001)
+    // while pricing rows use the alias (claude-haiku-4-5). Fall back to the
+    // longest alias that is a dash-boundary prefix of the reported ID, so
+    // 'claude-opus-4' can never shadow a 'claude-opus-4-8' report.
+    const active = await db.query.modelPricing.findMany({
+      where: eq(modelPricing.isActive, true),
+    });
+    pricing = active
+      .filter((p) => modelId.startsWith(`${p.modelId}-`))
+      .sort((a, b) => b.modelId.length - a.modelId.length)[0];
+  }
 
   if (!pricing) {
     // Caller should log a warning with modelId
@@ -61,7 +74,11 @@ export async function accumulateSessionCost(
   sessionId: string,
   usage:     TokenUsage,
   cost:      number,
+  opts?:     { countToolCall?: boolean },
 ): Promise<void> {
+  // countToolCall defaults true (hook-event path: one usage report per tool
+  // call). MCP report_usage passes false — a summary report is not a tool call.
+  const toolCallIncrement = (opts?.countToolCall ?? true) ? 1 : 0;
   await db
     .update(agentSessions)
     .set({
@@ -69,7 +86,7 @@ export async function accumulateSessionCost(
       totalOutputTokens:    sql`total_output_tokens + ${usage.output_tokens}`,
       totalCacheReadTokens: sql`total_cache_read_tokens + ${usage.cache_read_tokens ?? 0}`,
       totalCostUsd:         sql`total_cost_usd + ${cost}`,
-      totalToolCalls:       sql`total_tool_calls + 1`,
+      totalToolCalls:       sql`total_tool_calls + ${toolCallIncrement}`,
     })
     .where(eq(agentSessions.id, sessionId));
 }

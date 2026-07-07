@@ -2,8 +2,13 @@
  * Seed model pricing table with current Anthropic Claude pricing.
  * Run: npx tsx src/scripts/seed-model-pricing.ts
  *
- * Prices in USD per 1 million tokens (as of 2025-05).
+ * NOTE: migration 0066 seeds the current-generation models automatically on
+ * every fresh install — this script is the manual refresh path for price
+ * changes and for keeping legacy model rows around for historical sessions.
+ *
+ * Prices in USD per 1 million tokens (as of 2026-06).
  * Columns: input / output / cache_read / cache_write
+ * Cache read = 0.1x input; cache write (5-min TTL) = 1.25x input.
  */
 
 import { db } from '../db/index.js';
@@ -17,6 +22,64 @@ const MODELS: Array<{
   cacheReadPricePerMillion: number;
   cacheWritePricePerMillion: number;
 }> = [
+  // ── Current generation ──────────────────────────────────────────────────
+  {
+    modelId: 'claude-fable-5',
+    provider: 'anthropic',
+    inputPricePerMillion: 10.0,
+    outputPricePerMillion: 50.0,
+    cacheReadPricePerMillion: 1.0,
+    cacheWritePricePerMillion: 12.5,
+  },
+  {
+    modelId: 'claude-opus-4-8',
+    provider: 'anthropic',
+    inputPricePerMillion: 5.0,
+    outputPricePerMillion: 25.0,
+    cacheReadPricePerMillion: 0.5,
+    cacheWritePricePerMillion: 6.25,
+  },
+  {
+    modelId: 'claude-opus-4-7',
+    provider: 'anthropic',
+    inputPricePerMillion: 5.0,
+    outputPricePerMillion: 25.0,
+    cacheReadPricePerMillion: 0.5,
+    cacheWritePricePerMillion: 6.25,
+  },
+  {
+    modelId: 'claude-opus-4-6',
+    provider: 'anthropic',
+    inputPricePerMillion: 5.0,
+    outputPricePerMillion: 25.0,
+    cacheReadPricePerMillion: 0.5,
+    cacheWritePricePerMillion: 6.25,
+  },
+  {
+    modelId: 'claude-sonnet-5',
+    provider: 'anthropic',
+    inputPricePerMillion: 3.0,
+    outputPricePerMillion: 15.0,
+    cacheReadPricePerMillion: 0.3,
+    cacheWritePricePerMillion: 3.75,
+  },
+  {
+    modelId: 'claude-sonnet-4-6',
+    provider: 'anthropic',
+    inputPricePerMillion: 3.0,
+    outputPricePerMillion: 15.0,
+    cacheReadPricePerMillion: 0.3,
+    cacheWritePricePerMillion: 3.75,
+  },
+  {
+    modelId: 'claude-haiku-4-5',
+    provider: 'anthropic',
+    inputPricePerMillion: 1.0,
+    outputPricePerMillion: 5.0,
+    cacheReadPricePerMillion: 0.1,
+    cacheWritePricePerMillion: 1.25,
+  },
+  // ── Legacy models (kept for historical sessions) ────────────────────────
   {
     modelId: 'claude-opus-4-5',
     provider: 'anthropic',
