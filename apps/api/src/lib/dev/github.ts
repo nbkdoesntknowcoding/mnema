@@ -19,6 +19,18 @@ export interface PrInfo {
 }
 
 /**
+ * Parses owner/name out of a GitHub repo URL as stored on projects
+ * (projects.github_repo_url): https://github.com/owner/repo with or without
+ * .git or a trailing slash, or the SSH form git@github.com:owner/repo.git.
+ * Returns null for anything else.
+ */
+export function parseGithubRepoUrl(url: string): { owner: string; name: string } | null {
+  const match = /(?:https?:\/\/(?:www\.)?github\.com\/|git@github\.com:)([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/.exec(url.trim());
+  if (!match) return null;
+  return { owner: match[1]!, name: match[2]! };
+}
+
+/**
  * Fetches the most recent PR for a given branch from GitHub.
  * Returns null if not found, token missing, or any error occurs.
  */

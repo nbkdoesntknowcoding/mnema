@@ -23,7 +23,7 @@ import { Worker, type Job } from 'bullmq';
 import { eq, sql as drizzleSql } from 'drizzle-orm';
 import IORedis from 'ioredis';
 import { config } from '../../config/env.js';
-import { agentSessions, fileDiffs, toolCalls } from '../../db/schema.js';
+import { agentSessions, fileDiffs, projects, tasks, toolCalls } from '../../db/schema.js';
 import { withSystemPrivilege } from '../../db/with-system-privilege.js';
 import {
   normaliseClaudeCodePayload,
@@ -238,25 +238,51 @@ async function finaliseSession(
   });
 
   // GitHub PR attribution (async, non-blocking — runs after 202 is sent)
-  const { findPrForBranch } = await import('../../lib/dev/github.js');
-  if (hook.git_branch && process.env.GITHUB_REPO_OWNER && process.env.GITHUB_REPO_NAME) {
-    findPrForBranch(
-      hook.git_branch,
-      process.env.GITHUB_REPO_OWNER,
-      process.env.GITHUB_REPO_NAME,
-    )
-      .then(async (pr: import('../../lib/dev/github.js').PrInfo | null) => {
-        if (!pr) return;
-        await withSystemPrivilege((tx) =>
-          tx
-            .update(agentSessions)
-            .set({ gitCommitAfter: pr.url })
-            .where(eq(agentSessions.id, sessionId)),
-        );
-      })
-      .catch((err: unknown) => {
-        console.error('[hook-events] GitHub PR lookup failed:', err);
-      });
+  if (hook.git_branch) {
+    void attributePr(sessionId, hook.git_branch);
+  }
+}
+
+/**
+ * Best-effort PR attribution for a finished session. The repo to search is
+ * the session's task's project (projects.github_repo_url) when set; the
+ * GITHUB_REPO_OWNER/GITHUB_REPO_NAME env pair remains the single-repo
+ * fallback. The PR lands on the linked task's github_pr_url/status — the
+ * fields the Kanban board reads. (Previously the PR URL overwrote
+ * agent_sessions.git_commit_after, losing the commit SHA recorded at
+ * finalisation.)
+ */
+async function attributePr(sessionId: string, branch: string): Promise<void> {
+  try {
+    const { findPrForBranch, parseGithubRepoUrl } = await import('../../lib/dev/github.js');
+
+    const [row] = await withSystemPrivilege((tx) =>
+      tx
+        .select({ taskId: agentSessions.taskId, repoUrl: projects.githubRepoUrl })
+        .from(agentSessions)
+        .leftJoin(tasks, eq(tasks.id, agentSessions.taskId))
+        .leftJoin(projects, eq(projects.id, tasks.projectId))
+        .where(eq(agentSessions.id, sessionId))
+        .limit(1),
+    );
+
+    let repo = row?.repoUrl ? parseGithubRepoUrl(row.repoUrl) : null;
+    if (!repo && process.env.GITHUB_REPO_OWNER && process.env.GITHUB_REPO_NAME) {
+      repo = { owner: process.env.GITHUB_REPO_OWNER, name: process.env.GITHUB_REPO_NAME };
+    }
+    if (!repo) return;
+
+    const pr = await findPrForBranch(branch, repo.owner, repo.name);
+    if (!pr || !row?.taskId) return;
+
+    await withSystemPrivilege((tx) =>
+      tx
+        .update(tasks)
+        .set({ githubPrUrl: pr.url, githubPrStatus: pr.status, updatedAt: new Date() })
+        .where(eq(tasks.id, row.taskId!)),
+    );
+  } catch (err) {
+    console.error('[hook-events] GitHub PR lookup failed:', err);
   }
 }
 
