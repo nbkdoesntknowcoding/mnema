@@ -95,7 +95,7 @@
     "concurrently": "^10.0.3",
     "drizzle-kit": "^0.28.0",
     "tsx": "^4.22.0",
-    "typescript": "^5.6.0",
+    "typescript": "^6.0.3",
     "vitest": "^2.0.0",
     "ws": "^8.20.1"
   }
