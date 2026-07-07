@@ -10,7 +10,7 @@
 import { and, asc, desc, eq, gte, max, sql, sum } from 'drizzle-orm';
 import { z } from 'zod';
 import type { McpAuthContext } from '../../auth.js';
-import { agentSessions, docs, folders, tasks, toolCalls, users, workspaceMembers } from '../../../db/schema.js';
+import { agentSessions, docs, folders, taskComments, tasks, toolCalls, users, workspaceMembers } from '../../../db/schema.js';
 import { db } from '../../../db/index.js';
 import { withSystemPrivilege } from '../../../db/with-system-privilege.js';
 import { withTenant } from '../../../db/with-tenant.js';
@@ -115,6 +115,8 @@ export const GET_NEXT_TASK_TOOL = {
     'Defaults to backlog status. Pass status="audit_fix" to get blocked tasks needing review.',
     'Use the returned task.id with claim_task to start working on it.',
     'Returns null if no tasks are available in the requested column.',
+    'Includes reviewer comments left on the card — treat them as instructions',
+    'from the team and incorporate them into your fix or implementation.',
     '',
     'Use this when you are starting work or picking up the next item from the board.',
     'Step 1 of the dev loop: get_next_task → claim_task → complete_task / log_blocker.',
@@ -391,11 +393,36 @@ export async function getNextTask(ctx: McpAuthContext, rawArgs: Record<string, u
   if (task.retryFixHint) {
     content += `Fix hint from last attempt: ${task.retryFixHint}\n`;
   }
+
+  // Reviewer comments left on the Kanban card — the human feedback channel
+  // (Audit/Fix reviews especially). Newest 5, oldest first so the agent
+  // reads them in conversation order and acts on them.
+  const commentRows = await withTenant(ctx.tenant_id, (tx) =>
+    tx
+      .select({
+        body:       taskComments.body,
+        authorName: users.displayName,
+        createdAt:  taskComments.createdAt,
+      })
+      .from(taskComments)
+      .leftJoin(users, eq(users.id, taskComments.authorId))
+      .where(eq(taskComments.taskId, task.id))
+      .orderBy(desc(taskComments.createdAt))
+      .limit(5),
+  );
+  const comments = commentRows.reverse();
+  if (comments.length > 0) {
+    content += 'Reviewer comments (treat as instructions):\n';
+    for (const c of comments) {
+      content += `- ${c.authorName ?? 'Member'}: ${c.body}\n`;
+    }
+  }
+
   content += `Task ID: ${task.id} — use this in claim_task.`;
 
   return {
     content,
-    structuredContent: { task, linkedDoc },
+    structuredContent: { task, linkedDoc, comments },
   };
 }
 

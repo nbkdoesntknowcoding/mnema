@@ -20,7 +20,7 @@ import { and, asc, desc, eq, gt, isNull, max, sql } from 'drizzle-orm';
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { db } from '../db/index.js';
-import { agentSessions, tasks } from '../db/schema.js';
+import { agentSessions, taskComments, tasks, users } from '../db/schema.js';
 import { withTenant } from '../db/with-tenant.js';
 import { requireDevProjectMode } from '../plugins/dev-mode.js';
 import { emitWorkspaceEvent } from '../lib/events.js';
@@ -54,6 +54,10 @@ const reorderSchema = z.object({
   taskId:   z.string().uuid(),
   newOrder: z.number().int().nonnegative(),
   status:   z.enum(['backlog', 'in_progress', 'review', 'audit_fix', 'done']),
+});
+
+const createCommentSchema = z.object({
+  body: z.string().min(1).max(4000),
 });
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -526,5 +530,85 @@ export const tasksRoutes: FastifyPluginAsync = async (app) => {
 
     emitTaskUpdated(req.auth.tenant_id, updated!, previousStatus, 'user');
     return updated;
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // GET /api/tasks/:id/comments — human comments, oldest first
+  // ──────────────────────────────────────────────────────────────────────────
+  app.get('/api/tasks/:id/comments', async (req, reply) => {
+    if (!req.auth) return reply.code(401).send({ error: 'unauthorized' });
+    const { id } = req.params as { id: string };
+
+    const task = await fetchTask(req.auth.tenant_id, id);
+    if (!task) return reply.code(404).send({ error: 'task_not_found' });
+
+    const comments = await withTenant(req.auth.tenant_id, async (tx) =>
+      tx
+        .select({
+          id:         taskComments.id,
+          body:       taskComments.body,
+          authorId:   taskComments.authorId,
+          authorName: users.displayName,
+          createdAt:  taskComments.createdAt,
+        })
+        .from(taskComments)
+        .leftJoin(users, eq(users.id, taskComments.authorId))
+        .where(eq(taskComments.taskId, id))
+        .orderBy(asc(taskComments.createdAt)),
+    );
+
+    return { comments };
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // POST /api/tasks/:id/comments — add a comment (any status; the Audit/Fix
+  // column is the primary use: reviewers leave guidance next to the blocker)
+  // ──────────────────────────────────────────────────────────────────────────
+  app.post('/api/tasks/:id/comments', async (req, reply) => {
+    if (!req.auth) return reply.code(401).send({ error: 'unauthorized' });
+    const { id } = req.params as { id: string };
+
+    const parsed = createCommentSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'invalid_body', details: parsed.error.flatten() });
+    }
+
+    const task = await fetchTask(req.auth.tenant_id, id);
+    if (!task) return reply.code(404).send({ error: 'task_not_found' });
+
+    const [created] = await withTenant(req.auth.tenant_id, async (tx) =>
+      tx
+        .insert(taskComments)
+        .values({
+          workspaceId: req.auth!.tenant_id,
+          taskId:      id,
+          authorId:    req.auth!.sub,
+          body:        parsed.data.body,
+        })
+        .returning(),
+    );
+
+    const [author] = await withTenant(req.auth.tenant_id, async (tx) =>
+      tx
+        .select({ displayName: users.displayName })
+        .from(users)
+        .where(eq(users.id, req.auth!.sub))
+        .limit(1),
+    );
+
+    const comment = {
+      id:         created!.id,
+      body:       created!.body,
+      authorId:   created!.authorId,
+      authorName: author?.displayName ?? null,
+      createdAt:  created!.createdAt,
+    };
+
+    emitWorkspaceEvent(req.auth.tenant_id, {
+      type: 'task_commented',
+      data: { taskId: id, comment },
+    });
+
+    return reply.code(201).send({ comment });
   });
 };

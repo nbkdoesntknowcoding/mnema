@@ -1372,6 +1372,23 @@ export const tasks = pgTable(
   }),
 );
 
+// Human comments on Kanban tasks — review notes and audit-fix guidance that
+// don't belong in the task description (which agents treat as the spec).
+export const taskComments = pgTable(
+  'task_comments',
+  {
+    id:          uuid('id').primaryKey().defaultRandom(),
+    workspaceId: uuid('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
+    taskId:      uuid('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
+    authorId:    uuid('author_id').notNull().references(() => users.id),
+    body:        text('body').notNull(),
+    createdAt:   timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    taskIdx: index('task_comments_task_idx').on(table.taskId, table.createdAt),
+  }),
+);
+
 // Agent sessions: created when an agent claims a task. Phase 1 stub —
 // Phase 2 adds cost, token, and event columns via additive migration.
 export const agentSessions = pgTable('agent_sessions', {

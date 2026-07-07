@@ -10,6 +10,14 @@ interface Member {
   email:       string;
 }
 
+interface TaskComment {
+  id:         string;
+  body:       string;
+  authorId:   string;
+  authorName: string | null;
+  createdAt:  string;
+}
+
 interface TaskDetailModalProps {
   task:     Task;
   onClose:  () => void;
@@ -65,6 +73,11 @@ export function TaskDetailModal({ task, onClose, onSave, onDelete }: TaskDetailM
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [saveError,    setSaveError]    = useState<string | null>(null);
 
+  // Comments
+  const [comments,       setComments]       = useState<TaskComment[]>([]);
+  const [commentDraft,   setCommentDraft]   = useState('');
+  const [postingComment, setPostingComment] = useState(false);
+
   const isDirty =
     editTitle       !== task.title ||
     editDescription !== (task.description ?? '') ||
@@ -91,6 +104,13 @@ export function TaskDetailModal({ task, onClose, onSave, onDelete }: TaskDetailM
       .then((r) => setMembers(r.members))
       .catch(() => { /* ignore */ });
   }, []);
+
+  // Fetch comments
+  useEffect(() => {
+    void apiFetch<{ comments: TaskComment[] }>(`/api/tasks/${task.id}/comments`)
+      .then((r) => setComments(r.comments ?? []))
+      .catch(() => { /* ignore */ });
+  }, [task.id]);
 
   // Close on Escape
   useEffect(() => {
@@ -120,6 +140,24 @@ export function TaskDetailModal({ task, onClose, onSave, onDelete }: TaskDetailM
     await navigator.clipboard.writeText(task.id);
     setCopied(true);
     setTimeout(() => setCopied(false), 1800);
+  }
+
+  async function postComment() {
+    const body = commentDraft.trim();
+    if (!body || postingComment) return;
+    setPostingComment(true);
+    try {
+      const r = await apiFetch<{ comment: TaskComment }>(`/api/tasks/${task.id}/comments`, {
+        method: 'POST',
+        body: JSON.stringify({ body }),
+      });
+      setComments((prev) => [...prev, r.comment]);
+      setCommentDraft('');
+    } catch {
+      /* keep the draft so nothing is lost */
+    } finally {
+      setPostingComment(false);
+    }
   }
 
   async function handleSave() {
@@ -227,6 +265,8 @@ export function TaskDetailModal({ task, onClose, onSave, onDelete }: TaskDetailM
 
             {/* Editable Title */}
             <input
+              aria-label="Task title"
+              placeholder="Task title"
               value={editTitle}
               onChange={(e) => setEditTitle(e.target.value)}
               style={{
@@ -583,6 +623,75 @@ export function TaskDetailModal({ task, onClose, onSave, onDelete }: TaskDetailM
               </div>
             </div>
           )}
+
+          {/* Comments — review notes; on Audit/Fix, guidance for the next attempt */}
+          <div>
+            <div style={sectionLabel}>
+              Comments{comments.length > 0 ? ` · ${comments.length}` : ''}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {comments.map((c) => (
+                <div key={c.id} style={{
+                  background:   T.surface1,
+                  border:       `0.5px solid ${T.line}`,
+                  borderRadius: 10,
+                  padding:      '10px 14px',
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: T.textPrimary }}>
+                      {c.authorName ?? 'Member'}
+                    </span>
+                    <span style={{ fontSize: 10.5, color: T.textMuted, fontFamily: T.fontMono }}>
+                      {new Date(c.createdAt).toLocaleString()}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 12.5, color: T.textSecondary, lineHeight: '1.5', whiteSpace: 'pre-wrap' }}>
+                    {c.body}
+                  </div>
+                </div>
+              ))}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  aria-label="Add a comment"
+                  value={commentDraft}
+                  onChange={(e) => setCommentDraft(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') void postComment(); }}
+                  placeholder={task.status === 'audit_fix'
+                    ? 'Add guidance for the next attempt…'
+                    : 'Add a comment…'}
+                  style={{
+                    flex:         1,
+                    background:   T.surface2,
+                    border:       `0.5px solid ${T.line}`,
+                    borderRadius: 8,
+                    padding:      '9px 12px',
+                    color:        T.textPrimary,
+                    fontFamily:   T.fontUI,
+                    fontSize:     12.5,
+                    outline:      'none',
+                  }}
+                />
+                <button
+                  onClick={() => { void postComment(); }}
+                  disabled={!commentDraft.trim() || postingComment}
+                  style={{
+                    padding:      '6px 16px',
+                    borderRadius: 8,
+                    border:       `0.5px solid ${T.glassBorder}`,
+                    background:   T.surface2,
+                    color:        T.textPrimary,
+                    fontSize:     12,
+                    fontWeight:   500,
+                    fontFamily:   T.fontUI,
+                    cursor:       (!commentDraft.trim() || postingComment) ? 'default' : 'pointer',
+                    opacity:      (!commentDraft.trim() || postingComment) ? 0.5 : 1,
+                  }}
+                >
+                  {postingComment ? '…' : 'Post'}
+                </button>
+              </div>
+            </div>
+          </div>
 
           {/* Save error */}
           {saveError && (
