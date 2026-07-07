@@ -55,12 +55,21 @@ function pruneNonces(): void {
 
 // ── Proposal content store ────────────────────────────────────────────────────
 // Stores proposed markdown indexed by nonce. Retrieve at commit time.
+/** When a proposal originates from a gated flow capture, this carries the run link
+ *  through to commit time so the created doc records against its flow run. */
+export interface FlowCaptureRef {
+  run_id: string;
+  node_id: string;
+  flow_slug: string;
+}
+
 interface ContentStoreEntry {
   markdown: string;
   anchor_id?: string;
   doc_name?: string;
   expected_anchors?: string[];
   folder_id?: string;
+  flow_capture?: FlowCaptureRef;
   exp: number;
 }
 const contentStore = new Map<string, ContentStoreEntry>();
@@ -73,6 +82,7 @@ export function storeProposalContent(
   docName?: string,
   expectedAnchors?: string[],
   folderId?: string,
+  flowCapture?: FlowCaptureRef,
 ): void {
   contentStore.set(nonce, {
     markdown,
@@ -80,6 +90,7 @@ export function storeProposalContent(
     doc_name: docName,
     expected_anchors: expectedAnchors,
     folder_id: folderId,
+    flow_capture: flowCapture,
     exp: expMs,
   });
   if (contentStore.size > 1000) {
@@ -92,7 +103,7 @@ export function storeProposalContent(
 
 export function getProposalContent(
   nonce: string,
-): { markdown: string; anchor_id?: string; doc_name?: string; expected_anchors?: string[]; folder_id?: string } | null {
+): { markdown: string; anchor_id?: string; doc_name?: string; expected_anchors?: string[]; folder_id?: string; flow_capture?: FlowCaptureRef } | null {
   const entry = contentStore.get(nonce);
   if (!entry) return null;
   if (Date.now() > entry.exp) { contentStore.delete(nonce); return null; }
@@ -102,6 +113,7 @@ export function getProposalContent(
     doc_name: entry.doc_name,
     expected_anchors: entry.expected_anchors,
     folder_id: entry.folder_id,
+    flow_capture: entry.flow_capture,
   };
 }
 

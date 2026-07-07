@@ -110,6 +110,11 @@ const argsSchema = z.object({
   title: z.string().min(1).max(200).optional(),
   folder_id: z.string().uuid().optional(),
   doc_name: z.string().min(1).max(200).optional(),
+  // Internal: set by submit_flow_capture on the gated path so the committed doc
+  // records against its flow run. Not exposed in the public tool schema.
+  flow_capture: z
+    .object({ run_id: z.string().uuid(), node_id: z.string().min(1).max(64), flow_slug: z.string().min(1).max(64) })
+    .optional(),
 }).strict();
 
 export interface ProposeDocWriteResult {
@@ -208,6 +213,7 @@ export async function proposeDocWrite(
     args.title ?? args.doc_name,
     args.expected_anchors,
     args.folder_id,
+    args.flow_capture,
   );
 
   // Build the operation-specific preview sub-object.

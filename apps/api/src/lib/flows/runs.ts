@@ -6,11 +6,12 @@
  * each produced doc back to its step and auto-completes the run when every capture
  * step has landed. All scoped through withTenant (RLS).
  */
-import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
-import { docs, flowRunSteps, flowRuns } from '../../db/schema.js';
+import { and, desc, eq, gte, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
+import { docs, flowEdges, flowNodes, flowRunSteps, flowRuns, flowVersions, flows } from '../../db/schema.js';
 import type { FlowRunStepInput, FlowRunStepOutput } from '../../db/schema.js';
 import { withTenant } from '../../db/with-tenant.js';
 import type { McpAuthContext } from '../../mcp/auth.js';
+import { topologicalWalk } from './walk.js';
 
 export interface RunStepSnapshot {
   step_index: number;
@@ -51,6 +52,94 @@ export async function startFlowRun(
           nodeId: s.node_id,
           kind: s.kind,
           title: s.title,
+          status: 'pending' as const,
+        })),
+      );
+    }
+    return runId;
+  });
+}
+
+/**
+ * Find-or-create an "open" run for a flow so captures are recorded even when the
+ * walker never called start_flow_run. Resumes the most recent still-`running` run
+ * for this (flow, user) started within the last 12h; otherwise snapshots the flow's
+ * steps into a fresh run. An advisory lock on (flow, user) serialises concurrent
+ * captures so a burst of them shares ONE run instead of spawning many.
+ *
+ * Returns the run id, or null if the flow slug doesn't resolve to a published flow.
+ */
+export async function ensureRunForCapture(ctx: McpAuthContext, flowSlug: string): Promise<string | null> {
+  return withTenant(ctx.tenant_id, async (tx) => {
+    const flowRows = await tx
+      .select({ id: flows.id, name: flows.name, versionId: flowVersions.id })
+      .from(flows)
+      .innerJoin(flowVersions, eq(flowVersions.id, flows.publishedVersionId))
+      .where(and(eq(flows.slug, flowSlug), isNull(flows.deletedAt), eq(flowVersions.isPublished, true)))
+      .limit(1);
+    const flow = flowRows[0];
+    if (!flow) return null;
+
+    // Serialise concurrent captures for the same (flow, user) so they attach to one run.
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`flowrun:${flow.id}:${ctx.user_id}`}))`);
+
+    // Resume a still-open run from the last 12h, if any.
+    const cutoff = new Date(Date.now() - 12 * 60 * 60 * 1000);
+    const open = await tx
+      .select({ id: flowRuns.id })
+      .from(flowRuns)
+      .where(
+        and(
+          eq(flowRuns.flowId, flow.id),
+          eq(flowRuns.status, 'running'),
+          eq(flowRuns.startedBy, ctx.user_id),
+          gte(flowRuns.startedAt, cutoff),
+        ),
+      )
+      .orderBy(desc(flowRuns.startedAt))
+      .limit(1);
+    if (open[0]) return open[0].id;
+
+    // Otherwise snapshot the flow's steps into a fresh run.
+    const dbNodes = await tx
+      .select({
+        client_node_id: flowNodes.clientNodeId,
+        kind: flowNodes.kind,
+        title: flowNodes.title,
+        position_x: flowNodes.positionX,
+        position_y: flowNodes.positionY,
+        data: flowNodes.data,
+      })
+      .from(flowNodes)
+      .where(eq(flowNodes.flowVersionId, flow.versionId));
+    const dbEdges = await tx
+      .select({ from_node_id: flowEdges.fromNodeId, to_node_id: flowEdges.toNodeId, from_socket: flowEdges.fromSocket })
+      .from(flowEdges)
+      .where(eq(flowEdges.flowVersionId, flow.versionId));
+    const ordered = topologicalWalk(dbNodes, dbEdges);
+
+    const rows = await tx
+      .insert(flowRuns)
+      .values({
+        workspaceId: ctx.tenant_id,
+        flowId: flow.id,
+        flowVersionId: flow.versionId,
+        flowSlug,
+        flowName: flow.name,
+        totalSteps: ordered.length,
+        startedBy: ctx.user_id,
+        status: 'running',
+      })
+      .returning({ id: flowRuns.id });
+    const runId = rows[0]!.id;
+    if (ordered.length) {
+      await tx.insert(flowRunSteps).values(
+        ordered.map((n, i) => ({
+          runId,
+          stepIndex: i + 1,
+          nodeId: n.client_node_id,
+          kind: n.kind,
+          title: n.title,
           status: 'pending' as const,
         })),
       );

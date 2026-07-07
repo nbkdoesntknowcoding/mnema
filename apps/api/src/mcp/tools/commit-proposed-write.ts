@@ -23,6 +23,7 @@ import type { McpAuthContext } from '../auth.js';
 import { requireWriteScope } from '../scope.js';
 import { withAudit } from './audit.js';
 import { redeemProposalToken, getProposalContent } from '../apps/proposal-token.js';
+import { recordCapture } from '../../lib/flows/runs.js';
 import { appendBlocksToDoc } from './append-blocks-to-doc.js';
 import { replaceDocBody } from './replace-doc-body.js';
 import { createDoc } from './create-doc.js';
@@ -179,6 +180,17 @@ export async function commitProposedWrite(
             ...(stored?.folder_id ? { folder_id: stored.folder_id } : {}),
           });
           if (result.error) return { error: result.error, message: result.message };
+          // Gated flow capture: link the freshly-created doc back to its run step.
+          if (stored?.flow_capture && result.doc_id) {
+            try {
+              await recordCapture(ctx, {
+                runId: stored.flow_capture.run_id,
+                nodeId: stored.flow_capture.node_id,
+                docId: result.doc_id,
+                docTitle: result.title ?? docName,
+              });
+            } catch { /* run-linking is best-effort — never fail the commit on it */ }
+          }
           return { committed: true, doc_id: result.doc_id, operation: 'create' };
         }
 

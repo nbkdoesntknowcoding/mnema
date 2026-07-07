@@ -21,7 +21,7 @@ import { requireWriteScope } from '../scope.js';
 import { withAudit } from './audit.js';
 import { createDoc } from './create-doc.js';
 import { proposeDocWrite } from './propose-doc-write.js';
-import { recordCapture } from '../../lib/flows/runs.js';
+import { ensureRunForCapture, recordCapture } from '../../lib/flows/runs.js';
 
 export const SUBMIT_FLOW_CAPTURE_TOOL_NAME = 'submit_flow_capture';
 
@@ -142,6 +142,16 @@ export async function submitFlowCapture(
   const folderId =
     args.target_folder_id ?? (typeof data.target_folder_id === 'string' ? data.target_folder_id : undefined);
 
+  // Resolve the run this capture belongs to. Prefer the caller-threaded run_id; else
+  // auto-open/attach one so a flow that produces docs ALWAYS gets a run record — even
+  // when the walker never called start_flow_run. Best-effort: never fail the capture.
+  let runId: string | undefined = args.run_id;
+  if (!runId) {
+    try {
+      runId = (await ensureRunForCapture(ctx, args.flow_slug)) ?? undefined;
+    } catch { /* recording is best-effort */ }
+  }
+
   // ── GATED (default): reuse the propose→approve seam (opens the existing panel) ──
   if (!autonomous) {
     const proposal = await proposeDocWrite(ctx, {
@@ -149,6 +159,8 @@ export async function submitFlowCapture(
       title: args.title,
       markdown: args.markdown,
       folder_id: folderId,
+      // Carry the run link through approve→confirm_doc_write so the created doc records.
+      ...(runId ? { flow_capture: { run_id: runId, node_id: args.node_id, flow_slug: args.flow_slug } } : {}),
     });
     if (proposal.error) {
       return err(proposal.error, proposal.message ?? proposal.error);
@@ -182,11 +194,11 @@ export async function submitFlowCapture(
       if (result.error) {
         return err(result.error, result.message ?? result.error);
       }
-      // Link into the run-history record, if this capture is part of a run.
-      if (args.run_id && result.doc_id) {
+      // Link into the run-history record (auto-opened above if the walker didn't).
+      if (runId && result.doc_id) {
         try {
           await recordCapture(ctx, {
-            runId: args.run_id,
+            runId,
             nodeId: args.node_id,
             docId: result.doc_id,
             docTitle: result.title ?? args.title,
