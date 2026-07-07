@@ -14,6 +14,7 @@ import { agentSessions, docs, folders, tasks, toolCalls, users, workspaceMembers
 import { db } from '../../../db/index.js';
 import { withSystemPrivilege } from '../../../db/with-system-privilege.js';
 import { withTenant } from '../../../db/with-tenant.js';
+import { accumulateSessionCost, calculateCost, type TokenUsage } from '../../../lib/dev/cost.js';
 import { emitWorkspaceEvent } from '../../../lib/events.js';
 
 // Priority ordering for get_next_task sorting (critical > high > medium > low)
@@ -30,6 +31,78 @@ function devModeError() {
     content: 'This tool is only available in Dev Project workspaces.',
     structuredContent: { error: 'dev_mode_required' },
     error: 'dev_mode_required' as const,
+  };
+}
+
+/**
+ * Applies an agent's token-usage report to a session: prices it against
+ * model_pricing, accumulates tokens + cost onto the session row (without
+ * inflating the tool-call count), backfills session.model, and emits the
+ * session_cost_updated SSE event so open dashboards update live.
+ */
+async function applyUsageReport(
+  ctx: McpAuthContext,
+  sessionId: string,
+  model: string,
+  usage: TokenUsage,
+): Promise<
+  | { cost: number; totalCostUsd: number; totalToolCalls: number; pricingFound: boolean }
+  | { error: 'session_not_found' }
+> {
+  const sessionRows = await withTenant(ctx.tenant_id, (tx) =>
+    tx
+      .select({
+        id:          agentSessions.id,
+        model:       agentSessions.model,
+        developerId: agentSessions.developerId,
+      })
+      .from(agentSessions)
+      .where(and(eq(agentSessions.id, sessionId), eq(agentSessions.workspaceId, ctx.tenant_id)))
+      .limit(1),
+  );
+  const session = sessionRows[0];
+  if (!session) return { error: 'session_not_found' };
+
+  const cost = await calculateCost(model, usage);
+  // Record tokens even when pricing is missing (cost 0) — token totals feed
+  // the optimization rules independently of pricing.
+  await accumulateSessionCost(sessionId, usage, cost, { countToolCall: false });
+
+  if (!session.model) {
+    await withTenant(ctx.tenant_id, (tx) =>
+      tx.update(agentSessions).set({ model }).where(eq(agentSessions.id, sessionId)),
+    );
+  }
+
+  const totalsRows = await withTenant(ctx.tenant_id, (tx) =>
+    tx
+      .select({
+        totalCostUsd:   agentSessions.totalCostUsd,
+        totalToolCalls: agentSessions.totalToolCalls,
+      })
+      .from(agentSessions)
+      .where(eq(agentSessions.id, sessionId))
+      .limit(1),
+  );
+  const totals = totalsRows[0]!;
+
+  emitWorkspaceEvent(ctx.tenant_id, {
+    type: 'session_cost_updated',
+    data: {
+      sessionId,
+      developerId:    session.developerId,
+      totalCostUsd:   totals.totalCostUsd,
+      totalToolCalls: totals.totalToolCalls,
+      latestToolName: '_usage_report',
+    },
+  });
+
+  const hasTokens = usage.input_tokens > 0 || usage.output_tokens > 0;
+  return {
+    cost,
+    totalCostUsd:   totals.totalCostUsd,
+    totalToolCalls: totals.totalToolCalls,
+    pricingFound:   cost > 0 || !hasTokens,
   };
 }
 
@@ -94,6 +167,10 @@ export const COMPLETE_TASK_TOOL = {
     'Optionally link the GitHub PR and provide a completion summary.',
     'Notifies workspace members if summary is provided.',
     '',
+    'ALWAYS include your final token usage (model + inputTokens + outputTokens,',
+    'plus cache tokens if you have them) covering any tokens not yet sent via',
+    'report_usage — this is how the task\'s cost lands on the dashboard.',
+    '',
     "Use this when a task's work is finished and verified. Step 3 of the dev loop:",
     'get_next_task → claim_task → complete_task / log_blocker.',
   ].join('\n'),
@@ -104,6 +181,11 @@ export const COMPLETE_TASK_TOOL = {
       sessionId:   { type: 'string', description: 'Agent session id from claim_task (optional).' },
       githubPrUrl: { type: 'string', description: 'GitHub PR URL to link (optional).' },
       summary:     { type: 'string', description: 'Short completion summary (optional, max 500 chars).' },
+      model:            { type: 'string', description: 'Model id the session ran on, e.g. "claude-opus-4-8" (needed to price the usage).' },
+      inputTokens:      { type: 'number', description: 'Input tokens consumed since your last report_usage call (or the whole session).' },
+      outputTokens:     { type: 'number', description: 'Output tokens consumed since your last report_usage call (or the whole session).' },
+      cacheReadTokens:  { type: 'number', description: 'Cache-read input tokens for the same span (optional).' },
+      cacheWriteTokens: { type: 'number', description: 'Cache-write input tokens for the same span (optional).' },
     },
     required: ['taskId'],
     additionalProperties: false,
@@ -185,6 +267,22 @@ const completeTaskArgs = z.object({
   sessionId:   z.string().uuid().optional(),
   githubPrUrl: z.string().url().optional(),
   summary:     z.string().max(500).optional(),
+  // Final token-usage report for the session — tokens not yet sent via
+  // report_usage. Applied only when sessionId and model are both present.
+  model:            z.string().min(1).optional(),
+  inputTokens:      z.number().int().nonnegative().optional(),
+  outputTokens:     z.number().int().nonnegative().optional(),
+  cacheReadTokens:  z.number().int().nonnegative().optional(),
+  cacheWriteTokens: z.number().int().nonnegative().optional(),
+});
+
+const reportUsageArgs = z.object({
+  sessionId:        z.string().uuid(),
+  model:            z.string().min(1),
+  inputTokens:      z.number().int().nonnegative(),
+  outputTokens:     z.number().int().nonnegative(),
+  cacheReadTokens:  z.number().int().nonnegative().optional(),
+  cacheWriteTokens: z.number().int().nonnegative().optional(),
 });
 
 const logBlockerArgs = z.object({
@@ -402,6 +500,24 @@ export async function completeTask(ctx: McpAuthContext, rawArgs: Record<string, 
       .returning(),
   );
 
+  // Apply the final usage report before closing out the session
+  let usageLine = '';
+  if (args.data.sessionId && args.data.model
+      && (args.data.inputTokens != null || args.data.outputTokens != null)) {
+    const usage: TokenUsage = {
+      input_tokens:       args.data.inputTokens ?? 0,
+      output_tokens:      args.data.outputTokens ?? 0,
+      cache_read_tokens:  args.data.cacheReadTokens,
+      cache_write_tokens: args.data.cacheWriteTokens,
+    };
+    const applied = await applyUsageReport(ctx, args.data.sessionId, args.data.model, usage);
+    if (!('error' in applied)) {
+      usageLine = applied.pricingFound
+        ? `\nUsage recorded: $${applied.cost.toFixed(6)} this report — session total $${applied.totalCostUsd.toFixed(6)}.`
+        : `\nUsage tokens recorded, but no pricing found for model '${args.data.model}' — cost stored as $0.`;
+    }
+  }
+
   // Update session if provided
   if (args.data.sessionId) {
     await withTenant(ctx.tenant_id, async (tx) =>
@@ -420,6 +536,7 @@ export async function completeTask(ctx: McpAuthContext, rawArgs: Record<string, 
 
   let content = `Task "${updated!.title}" marked complete. Moved to Done.`;
   if (args.data.githubPrUrl) content += `\nPR linked: ${args.data.githubPrUrl}`;
+  content += usageLine;
 
   return {
     content,
@@ -699,6 +816,32 @@ export const LOG_MILESTONE_TOOL = {
   annotations: { destructiveHint: false, title: 'Log milestone' },
 };
 
+export const REPORT_USAGE_TOOL = {
+  name: 'report_usage',
+  description: [
+    'Reports token usage for your current agent session so Mnema can compute its cost.',
+    'Call it when you finish a chunk of work (or right before complete_task) with the',
+    'tokens consumed SINCE YOUR LAST REPORT — amounts accumulate, so never re-send',
+    'totals you already reported. Read the numbers from your own usage accounting',
+    '(e.g. the usage block of your API responses). Pass the exact model id you run on,',
+    'e.g. "claude-opus-4-8".',
+  ].join('\n'),
+  inputSchema: {
+    type: 'object' as const,
+    properties: {
+      sessionId:        { type: 'string', description: 'Agent session id from claim_task.' },
+      model:            { type: 'string', description: 'Model id the tokens were consumed on, e.g. "claude-opus-4-8".' },
+      inputTokens:      { type: 'number', description: 'Input tokens consumed since the last report.' },
+      outputTokens:     { type: 'number', description: 'Output tokens consumed since the last report.' },
+      cacheReadTokens:  { type: 'number', description: 'Cache-read input tokens since the last report (optional).' },
+      cacheWriteTokens: { type: 'number', description: 'Cache-write input tokens since the last report (optional).' },
+    },
+    required: ['sessionId', 'model', 'inputTokens', 'outputTokens'],
+    additionalProperties: false,
+  },
+  annotations: { destructiveHint: false, title: 'Report token usage' },
+};
+
 // ── Phase 2 Argument schemas ──────────────────────────────────────────────────
 
 const getCurrentSessionArgs = z.object({
@@ -937,6 +1080,51 @@ export async function logMilestone(ctx: McpAuthContext, rawArgs: Record<string, 
       milestoneId: milestone!.id,
       sessionId:   args.data.sessionId,
       timestamp:   milestone!.timestamp.toISOString(),
+    },
+  };
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Phase 2 D.4: report_usage
+// ──────────────────────────────────────────────────────────────────────────────
+export async function reportUsage(ctx: McpAuthContext, rawArgs: Record<string, unknown>) {
+  if (ctx.workspaceMode !== 'dev_project') return devModeError();
+
+  const args = reportUsageArgs.safeParse(rawArgs);
+  if (!args.success) {
+    return { content: `Invalid arguments: ${args.error.message}`, structuredContent: { error: 'invalid_args' } };
+  }
+
+  const usage: TokenUsage = {
+    input_tokens:       args.data.inputTokens,
+    output_tokens:      args.data.outputTokens,
+    cache_read_tokens:  args.data.cacheReadTokens,
+    cache_write_tokens: args.data.cacheWriteTokens,
+  };
+
+  const applied = await applyUsageReport(ctx, args.data.sessionId, args.data.model, usage);
+  if ('error' in applied) {
+    return { content: 'Session not found.', structuredContent: { error: 'session_not_found' } };
+  }
+
+  const content = applied.pricingFound
+    ? [
+        `Recorded ${args.data.inputTokens} input + ${args.data.outputTokens} output tokens on ${args.data.model}.`,
+        `Cost this report: $${applied.cost.toFixed(6)} — session total: $${applied.totalCostUsd.toFixed(6)}.`,
+      ].join('\n')
+    : [
+        `Tokens recorded, but no pricing is configured for model '${args.data.model}' — cost stored as $0.`,
+        'An admin can add the model to the model_pricing table (see apps/api/src/scripts/seed-model-pricing.ts).',
+      ].join('\n');
+
+  return {
+    content,
+    structuredContent: {
+      sessionId:           args.data.sessionId,
+      model:               args.data.model,
+      costUsd:             applied.cost,
+      sessionTotalCostUsd: applied.totalCostUsd,
+      pricingFound:        applied.pricingFound,
     },
   };
 }
@@ -1326,6 +1514,7 @@ export const DEV_TOOLS = [
   { spec: GET_CURRENT_SESSION_TOOL,  handler: getCurrentSession },
   { spec: GET_COST_SUMMARY_TOOL,     handler: getCostSummary },
   { spec: LOG_MILESTONE_TOOL,        handler: logMilestone },
+  { spec: REPORT_USAGE_TOOL,         handler: reportUsage },
   // Phase 5 — Sprint planning
   { spec: CREATE_TASK_TOOL,          handler: createTask },
   { spec: CREATE_SPRINTS_TOOL,       handler: createSprints },
