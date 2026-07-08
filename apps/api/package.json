@@ -83,7 +83,7 @@
     "turndown-plugin-gfm": "^1.0.2",
     "voyageai": "^0.2.1",
     "yjs": "^13.6.0",
-    "zod": "^3.23.0",
+    "zod": "^4.4.3",
     "mdast2docx": "1.6.1",
     "unified": "^11.0.5",
     "remark-parse": "^11.0.0",
