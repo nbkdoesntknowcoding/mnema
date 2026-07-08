@@ -90,7 +90,7 @@
     "chart.js": "^4.4.7"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
+    "@types/node": "^26.1.0",
     "@types/ws": "^8.18.1",
     "concurrently": "^10.0.3",
     "drizzle-kit": "^0.28.0",
