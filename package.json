@@ -31,7 +31,17 @@
       "sharp"
     ],
     "overrides": {
-      "ioredis": "5.11.1"
+      "ioredis": "5.11.1",
+      "hono": "4.12.25",
+      "form-data": "4.0.6",
+      "qs": "6.15.2",
+      "vite": "6.4.3",
+      "tar": "7.5.16",
+      "@babel/core": "7.29.6",
+      "path-to-regexp": "6.3.0",
+      "yaml": "2.8.3",
+      "undici@^6": "6.27.0",
+      "undici@^7": "7.28.0"
     }
   },
   "packageManager": "pnpm@10.23.0+sha512.21c4e5698002ade97e4efe8b8b4a89a8de3c85a37919f957e7a0f30f38fbc5bbdd05980ffe29179b2fb6e6e691242e098d945d1601772cad0fef5fb6411e2a4b"
