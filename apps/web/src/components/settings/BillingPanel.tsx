@@ -321,7 +321,7 @@ export function BillingPanel(): JSX.Element {
       throw new Error(`Server returned HTTP ${res.status}. The request may have timed out — please try again.`);
     }
     if (typeof body.subscription_id === 'string') return { subscriptionId: body.subscription_id };
-    throw new Error(extractErrorMessage(body, `Could not start checkout (HTTP ${res.status}). Please email support@example.com.`));
+    throw new Error(extractErrorMessage(body, `Could not start checkout (HTTP ${res.status}). Please email mnema@theboringpeople.in.`));
   }
 
   /**
@@ -340,7 +340,7 @@ export function BillingPanel(): JSX.Element {
   ): void {
     const keyId = ((import.meta.env as Record<string, string>).PUBLIC_RAZORPAY_KEY_ID ?? '').trim();
     if (!keyId) {
-      toast('error', 'Payment system is not configured. Please contact support@example.com.');
+      toast('error', 'Payment system is not configured. Please contact mnema@theboringpeople.in.');
       onDismiss();
       return;
     }
@@ -386,7 +386,7 @@ export function BillingPanel(): JSX.Element {
         openRazorpayCheckout(result.subscriptionId, planName, () => setChangingPlan(null));
       }
     } catch (err: unknown) {
-      toast('error', err instanceof Error ? err.message : 'Could not start checkout. Please email support@example.com.');
+      toast('error', err instanceof Error ? err.message : 'Could not start checkout. Please email mnema@theboringpeople.in.');
       setChangingPlan(null);
     }
   }
@@ -400,7 +400,7 @@ export function BillingPanel(): JSX.Element {
         openRazorpayCheckout(result.subscriptionId, planName, () => setChangingPlan(null));
       }
     } catch (err: unknown) {
-      toast('error', err instanceof Error ? err.message : 'Could not change plan. Please email support@example.com.');
+      toast('error', err instanceof Error ? err.message : 'Could not change plan. Please email mnema@theboringpeople.in.');
       setChangingPlan(null);
     }
   }
@@ -428,7 +428,7 @@ export function BillingPanel(): JSX.Element {
           : 'end of billing period';
         toast('info', `Subscription cancelled. You keep access until ${until}.`, { duration: 6000 });
       } else {
-        toast('error', body.error ?? 'Could not cancel. Please email support@example.com.');
+        toast('error', body.error ?? 'Could not cancel. Please email mnema@theboringpeople.in.');
       }
     } catch {
       toast('error', 'Network error. Please check your connection and try again.');
@@ -449,7 +449,7 @@ export function BillingPanel(): JSX.Element {
         window.open(body.manage_url, '_blank', 'noopener,noreferrer');
         toast('info', 'Payment management page opened in a new tab.');
       } else {
-        toast('error', body.error ?? 'Could not open payment management page. Please email support@example.com.');
+        toast('error', body.error ?? 'Could not open payment management page. Please email mnema@theboringpeople.in.');
       }
     } catch {
       toast('error', 'Network error. Please check your connection and try again.');
@@ -1038,8 +1038,8 @@ export function BillingPanel(): JSX.Element {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2 }}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
             <span>Your subscription is set to cancel at the end of the billing period. You retain access until then.
               {' '}To reactivate, email{' '}
-              <a href="mailto:support@example.com" style={{ color: 'inherit', textDecoration: 'underline' }}>
-                support@example.com
+              <a href="mailto:mnema@theboringpeople.in" style={{ color: 'inherit', textDecoration: 'underline' }}>
+                mnema@theboringpeople.in
               </a>.
             </span>
           </p>
