@@ -155,6 +155,6 @@ export const TIERS: PricingTier[] = [
       { label: 'Data residency choice' },
       { label: 'Volume pricing' },
     ],
-    cta: { label: 'Contact sales', href: 'mailto:hello@example.com' },
+    cta: { label: 'Contact sales', href: 'mailto:mnema@theboringpeople.in' },
   },
 ];
