@@ -85,6 +85,16 @@ export function KanbanBoard({ workspaceId }: KanbanBoardProps): JSX.Element {
   const [showProjectDropdown, setShowProjectDropdown] = useState(false);
   const sseRef = useRef<EventSource | null>(null);
 
+  // Ref to store the trigger element so we can return focus when the task modal closes.
+  const taskTriggerRef = useRef<HTMLElement | null>(null);
+
+  // Capture the currently focused element when the modal opens.
+  useEffect(() => {
+    if (selectedTask) {
+      taskTriggerRef.current = document.activeElement as HTMLElement;
+    }
+  }, [selectedTask]);
+
   // Check if banner was previously dismissed
   useEffect(() => {
     const dismissed = localStorage.getItem(`mnema_setup_banner_${workspaceId}`);
@@ -507,7 +517,14 @@ export function KanbanBoard({ workspaceId }: KanbanBoardProps): JSX.Element {
       {selectedTask && (
         <TaskDetailModal
           task={selectedTask}
-          onClose={() => { setSelectedTask(null); }}
+          onClose={() => {
+            setSelectedTask(null);
+            // Restore focus to the element that triggered the modal
+            requestAnimationFrame(() => {
+              taskTriggerRef.current?.focus();
+              taskTriggerRef.current = null;
+            });
+          }}
           onSave={handleSaveTask}
           onDelete={handleDeleteTask}
         />

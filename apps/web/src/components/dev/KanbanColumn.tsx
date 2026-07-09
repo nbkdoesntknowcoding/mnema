@@ -207,6 +207,7 @@ export function KanbanColumn({
                       e.dataTransfer.effectAllowed = 'move';
                     }}
                     onClick={() => onTaskClick?.(task)}
+                    tabIndex={-1}
                     style={{ cursor: 'pointer' }}
                   >
                     <TaskCard
