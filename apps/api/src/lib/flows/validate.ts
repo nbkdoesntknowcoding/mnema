@@ -61,7 +61,19 @@ export interface FlowValidationResult {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export function validateFlow(nodes: FlowNode[], edges: FlowEdge[]): FlowValidationResult {
+/**
+ * @param opts.mode 'publish' (default, strict) requires every doc/docs binding
+ *   to be resolved. 'draft' tolerates a doc/docs node that was imported from a
+ *   community template and still carries a `requiresBinding` marker with no id —
+ *   an imported flow is a legal DRAFT before the user re-binds, but must be
+ *   fully bound before it can be published.
+ */
+export function validateFlow(
+  nodes: FlowNode[],
+  edges: FlowEdge[],
+  opts: { mode?: 'draft' | 'publish' } = {},
+): FlowValidationResult {
+  const mode = opts.mode ?? 'publish';
   const errors: FlowValidationError[] = [];
 
   if (nodes.length === 0) {
@@ -195,18 +207,21 @@ export function validateFlow(nodes: FlowNode[], edges: FlowEdge[]): FlowValidati
 
   // 5. Per-kind data shape.
   for (const node of nodes) {
-    errors.push(...validateNodeData(node));
+    errors.push(...validateNodeData(node, mode));
   }
 
   return { valid: errors.length === 0, errors };
 }
 
-function validateNodeData(node: FlowNode): FlowValidationError[] {
+function validateNodeData(node: FlowNode, mode: 'draft' | 'publish'): FlowValidationError[] {
   const errors: FlowValidationError[] = [];
   const { kind, data, client_node_id } = node;
+  // An imported-but-unbound node carries this marker; it is legal in a draft.
+  const pendingBinding = mode === 'draft' && Boolean(data.requiresBinding);
 
   switch (kind) {
     case 'doc': {
+      if (pendingBinding) break;
       if (typeof data.doc_id !== 'string' || !UUID_RE.test(data.doc_id)) {
         errors.push({
           code: 'invalid_node_data',
@@ -224,6 +239,7 @@ function validateNodeData(node: FlowNode): FlowValidationError[] {
       break;
     }
     case 'docs': {
+      if (pendingBinding) break;
       const hasIds =
         Array.isArray(data.doc_ids) &&
         data.doc_ids.length > 0 &&

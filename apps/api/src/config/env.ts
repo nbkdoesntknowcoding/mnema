@@ -244,6 +244,17 @@ const envSchema = z.object({
   // Ed25519 private signing key (PEM) — ISSUING SIDE ONLY (cloud). Absent on
   // self-host, which only verifies against the baked-in public key.
   LICENSE_SIGNING_KEY: z.string().optional(),
+
+  // Community Flows hub (open-core). Every instance — cloud AND self-hosted —
+  // talks to a CENTRAL hub to browse/import/publish flow templates. Defaults to
+  // the SaaS host; self-hosters may point elsewhere or disable entirely.
+  //   URL      — base URL of the hub API (serves /api/hub/*).
+  //   ENABLED  — false fully disables the feature (air-gapped self-host).
+  //   KEY      — the instance's community-license key, used only to authenticate
+  //              PUBLISH calls. Browse/import need no key. Absent = publish off.
+  COMMUNITY_HUB_URL:     z.string().url().default('https://api.theboringpeople.in'),
+  COMMUNITY_HUB_ENABLED: z.enum(['true', 'false']).default('true').transform((v) => v === 'true'),
+  COMMUNITY_HUB_KEY:     z.string().min(1).optional(),
 });
 
 const parsed = envSchema

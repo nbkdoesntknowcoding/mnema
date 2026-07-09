@@ -1,0 +1,25 @@
+---
+import AppLayout from '../../../layouts/AppLayout.astro';
+import { CommunityFlowDetail } from '../../../components/community/CommunityFlowDetail';
+
+const auth = Astro.locals.auth;
+if (!auth) {
+  return Astro.redirect('/auth/login');
+}
+const { slug } = Astro.params;
+
+const domainPart = auth.email.split('@')[1]?.split('.')[0] ?? '';
+const workspaceName = domainPart
+  ? domainPart.charAt(0).toUpperCase() + domainPart.slice(1)
+  : 'Workspace';
+---
+
+<AppLayout title="Community flow — Mnema" workspaceName={workspaceName} email={auth.email}>
+  <Fragment slot="status-left">
+    <a href="/app/community" style="font:500 11px/1 var(--mono);color:var(--ink-muted);text-decoration:none;">← Community</a>
+  </Fragment>
+
+  <div style="overflow-y:auto;height:100%;">
+    <CommunityFlowDetail slug={slug ?? ''} client:load />
+  </div>
+</AppLayout>

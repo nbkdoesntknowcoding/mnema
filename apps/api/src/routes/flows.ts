@@ -412,9 +412,12 @@ export const flowsRoutes: FastifyPluginAsync = async (app) => {
 
     // Validate graph invariants up-front. We don't run inside the tx
     // because validation is pure and shouldn't hold a row lock.
+    // Draft mode tolerates imported-but-unbound community nodes (requiresBinding);
+    // publish re-validates in strict mode, so bindings must be resolved to ship.
     const valid = validateFlow(
       parsed.data.nodes as ValidFlowNode[],
       parsed.data.edges as ValidFlowEdge[],
+      { mode: 'draft' },
     );
     if (!valid.valid) {
       return reply.code(400).send({ error: 'invalid_flow', errors: valid.errors });

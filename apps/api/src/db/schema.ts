@@ -961,6 +961,9 @@ export const flows = pgTable(
     // the link can view the published flow read-only.
     shareToken: text('share_token'),
     sharedAt:   timestamp('shared_at', { withTimezone: true }),
+    // Community Flows (0072) — set to the hub listing slug when this flow has
+    // been published to the community hub; null when not published.
+    communitySlug: text('community_slug'),
   },
   (table) => ({
     workspaceSlugUnique: unique('flows_workspace_id_slug_key').on(table.workspaceId, table.slug),
@@ -1800,6 +1803,68 @@ export const communityRegistrations = pgTable('community_registrations', {
   unsubscribedAt:  timestamp('unsubscribed_at', { withTimezone: true }),
   createdAt:       timestamp('created_at', { withTimezone: true }).notNull().default(sql`now()`),
 });
+
+/* ── Community Flows hub (migration 0071) ─────────────────────────────────────
+ * CENTRAL, cross-instance catalog of shareable flow templates. Unlike almost
+ * everything else, these tables are NOT workspace-scoped and carry NO RLS — the
+ * hub is cross-instance by design and is read via the superuser `db` client
+ * (mirrors the /api/docs/public pattern). Populated only on the SaaS hub (EE);
+ * inert empty tables on self-host installs. template_json holds the portable
+ * PortableFlowTemplate (lib/flows/portability.ts) with all workspace ids stripped. */
+export const communityFlows = pgTable(
+  'community_flows',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    slug: text('slug').notNull().unique(),
+    name: text('name').notNull(),
+    description: text('description'),
+    tags: text('tags').array().notNull().default(sql`ARRAY[]::text[]`),
+    templateJson: jsonb('template_json').notNull(),
+    schemaVersion: integer('schema_version').notNull().default(1),
+    // Publisher identity derived from the validated community-license key.
+    publisherEmail: text('publisher_email').notNull(),
+    publisherHandle: text('publisher_handle'),
+    sourceVersion: text('source_version'),
+    nodeCount: integer('node_count').notNull().default(0),
+    edgeCount: integer('edge_count').notNull().default(0),
+    importCount: integer('import_count').notNull().default(0),
+    // listed | unlisted | removed
+    status: text('status').notNull().default('listed'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    statusIdx: index('community_flows_status_idx').on(table.status),
+    publisherIdx: index('community_flows_publisher_idx').on(table.publisherEmail),
+    popularityIdx: index('community_flows_popularity_idx').on(table.importCount),
+    // one listing per (publisher, name) — re-publishing updates in place.
+    publisherNameUnique: unique('community_flows_publisher_name_key').on(
+      table.publisherEmail,
+      table.name,
+    ),
+  }),
+);
+
+export const communityFlowReports = pgTable(
+  'community_flow_reports',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    communityFlowId: uuid('community_flow_id')
+      .notNull()
+      .references(() => communityFlows.id, { onDelete: 'cascade' }),
+    // spam | malicious | inappropriate | broken | other
+    reason: text('reason').notNull(),
+    detail: text('detail'),
+    reporterFingerprint: text('reporter_fingerprint'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    resolvedBy: text('resolved_by'),
+  },
+  (table) => ({
+    flowIdx: index('community_flow_reports_flow_idx').on(table.communityFlowId),
+    unresolvedIdx: index('community_flow_reports_unresolved_idx').on(table.resolvedAt),
+  }),
+);
 
 // ── Internal admin center (migration 0047) ──────────────────────────────────────
 

@@ -87,6 +87,10 @@ export const authPlugin: FastifyPluginAsync = fp(async (app) => {
     if (url.startsWith('/api/hooks/') || url === '/install/claude-hooks.sh') return;
     // Public doc reader — no auth required.
     if (url.startsWith('/api/docs/public/')) return;
+    // Community Flows hub (EE) — cross-instance catalog. Browse/import/report are
+    // anonymous; publish/unpublish authenticate via a community-license key
+    // inside the handler (not the app JWT). Bypass the session-auth gate for all.
+    if (url.startsWith('/api/hub/')) return;
     // OnlyOffice — server-to-server calls from OnlyOffice container, no cookie.
     // /callback auth: OnlyOffice JWT signature. /file auth: tenantId query param.
     if (url === '/api/onlyoffice/callback') return;

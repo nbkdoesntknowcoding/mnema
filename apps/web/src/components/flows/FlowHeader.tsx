@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Play, ArrowLeft, Clock, CheckCircle, AlertCircle, Loader2, Save, Share2, Copy, Check } from 'lucide-react';
+import { Play, ArrowLeft, Clock, CheckCircle, AlertCircle, Loader2, Save, Share2, Copy, Check, Globe } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { StatusPill } from '../ui/StatusPill';
 import { MonoLabel } from '../ui/typography';
@@ -36,6 +36,7 @@ export function FlowHeader({
   onPublishClick,
 }: Props) {
   const [shareOpen, setShareOpen] = useState(false);
+  const [communityOpen, setCommunityOpen] = useState(false);
   return (
     <div className="shrink-0 bg-[var(--surface)] border-b border-[var(--line)] z-10">
       <div className="flex items-center justify-between px-6 h-14">
@@ -130,6 +131,16 @@ export function FlowHeader({
           </Button>
 
           <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setCommunityOpen(true)}
+            title="Publish this flow to the community"
+          >
+            <Globe size={12} strokeWidth={1.75} />
+            Community
+          </Button>
+
+          <Button
             variant="primary"
             size="sm"
             onClick={onPublishClick}
@@ -141,6 +152,7 @@ export function FlowHeader({
       </div>
 
       {shareOpen && <ShareFlowModal flow={flow} onClose={() => setShareOpen(false)} />}
+      {communityOpen && <PublishToCommunityModal flow={flow} onClose={() => setCommunityOpen(false)} />}
 
       {flow.description && (
         <div className="px-6 pb-3 text-[12px] text-[var(--ink-muted)] leading-[1.5] max-w-3xl">
@@ -225,6 +237,113 @@ function ShareFlowModal({ flow, onClose }: { flow: Flow; onClose: () => void }) 
           </button>
           <Button variant="primary" size="sm" onClick={onClose}>Done</Button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function PublishToCommunityModal({ flow, onClose }: { flow: Flow; onClose: () => void }) {
+  const [tagInput, setTagInput] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [publishedUrl, setPublishedUrl] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function publish() {
+    setSubmitting(true);
+    setErr(null);
+    try {
+      const tags = tagInput.split(',').map((t) => t.trim()).filter(Boolean).slice(0, 10);
+      const res = await fetch(`/api/flows/${flow.id}/publish-to-community`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tags }),
+      });
+      if (res.status === 400) { setErr('No community key configured. Add it in Settings → Community to publish.'); return; }
+      if (res.status === 409) { setErr('Publish a version of this flow first, then publish it to the community.'); return; }
+      if (res.status === 403) { setErr('Only workspace owners, admins, and editors can publish.'); return; }
+      if (!res.ok) { setErr('Publish failed. Try again.'); return; }
+      const body = (await res.json()) as { community_url: string };
+      setPublishedUrl(body.community_url);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function unpublish() {
+    await fetch(`/api/flows/${flow.id}/publish-to-community`, { method: 'DELETE' }).catch(() => {});
+    onClose();
+  }
+
+  async function copy() {
+    if (!publishedUrl) return;
+    try { await navigator.clipboard.writeText(publishedUrl); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* ignore */ }
+  }
+
+  return (
+    <div
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+      className="fixed inset-0 z-[80] flex items-center justify-center"
+      style={{ background: 'rgba(0,0,0,0.6)' }}
+    >
+      <div
+        className="w-[min(520px,92vw)] rounded-2xl p-5"
+        style={{ background: 'var(--surface-2, #16161a)', border: '0.5px solid var(--line)' }}
+      >
+        <h2 className="text-[16px] font-medium" style={{ color: 'var(--ink)' }}>Publish “{flow.name}” to the community</h2>
+        <p className="mt-1 text-[12.5px]" style={{ color: 'var(--ink-muted)' }}>
+          Your flow’s structure and instructions become public and importable by anyone. Doc and folder
+          references are <strong>stripped</strong> — no content from your workspace is shared; importers re-bind their own.
+        </p>
+
+        {!flow.is_published && (
+          <p className="mt-3 text-[12px]" style={{ color: 'var(--amber, #f0997b)' }}>
+            Publish a version of this flow first — only the published version is uploaded.
+          </p>
+        )}
+
+        {publishedUrl ? (
+          <>
+            <p className="mt-4 text-[12.5px]" style={{ color: 'var(--ink)' }}>Published. Anyone can now find it here:</p>
+            <div className="mt-2 flex items-center gap-2">
+              <input
+                readOnly
+                value={publishedUrl}
+                onFocus={(e) => e.currentTarget.select()}
+                className="flex-1 h-9 px-3 rounded-md text-[12.5px] outline-none"
+                style={{ background: 'var(--surface-input, rgba(255,255,255,0.04))', color: 'var(--ink)', border: '0.5px solid var(--line)' }}
+              />
+              <Button variant="secondary" size="sm" onClick={copy}>
+                {copied ? <Check size={12} strokeWidth={2} /> : <Copy size={12} strokeWidth={1.75} />}
+                {copied ? 'Copied' : 'Copy'}
+              </Button>
+            </div>
+            <div className="mt-5 flex items-center justify-between">
+              <button onClick={unpublish} className="text-[12px]" style={{ color: 'var(--ink-muted)', background: 'none', border: 'none', cursor: 'pointer' }}>
+                Unpublish
+              </button>
+              <Button variant="primary" size="sm" onClick={onClose}>Done</Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <label className="mt-4 block text-[11px]" style={{ color: 'var(--ink-muted)' }}>Tags (comma-separated)</label>
+            <input
+              value={tagInput}
+              onChange={(e) => setTagInput(e.target.value)}
+              placeholder="research, onboarding, qa"
+              className="mt-1.5 w-full h-9 px-3 rounded-md text-[12.5px] outline-none"
+              style={{ background: 'var(--surface-input, rgba(255,255,255,0.04))', color: 'var(--ink)', border: '0.5px solid var(--line)' }}
+            />
+            {err && <p className="mt-3 text-[12px]" style={{ color: 'var(--red, #f87171)' }}>{err}</p>}
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
+              <Button variant="primary" size="sm" onClick={publish} disabled={submitting || !flow.is_published}>
+                {submitting ? 'Publishing…' : 'Publish to community'}
+              </Button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
