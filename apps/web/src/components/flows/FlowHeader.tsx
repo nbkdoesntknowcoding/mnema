@@ -259,7 +259,7 @@ function PublishToCommunityModal({ flow, onClose }: { flow: Flow; onClose: () =>
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tags }),
       });
-      if (res.status === 400) { setErr('No community key configured. Add it in Settings → Community to publish.'); return; }
+      if (res.status === 400) { setErr('Publishing to the community hub is not configured on this instance.'); return; }
       if (res.status === 409) { setErr('Publish a version of this flow first, then publish it to the community.'); return; }
       if (res.status === 403) { setErr('Only workspace owners, admins, and editors can publish.'); return; }
       if (!res.ok) { setErr('Publish failed. Try again.'); return; }
