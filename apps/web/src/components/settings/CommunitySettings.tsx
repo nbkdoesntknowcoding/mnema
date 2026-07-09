@@ -100,6 +100,12 @@ export function CommunitySettings(): JSX.Element {
         <code style={mono}>COMMUNITY_HUB_URL</code> / <code style={mono}>COMMUNITY_HUB_ENABLED</code>.
       </p>
 
+      <p style={{ marginTop: 10, fontSize: 12.5, lineHeight: 1.6, color: muted }}>
+        Looking to unlock <strong>version history</strong> and <strong>document export</strong>? That's a separate,
+        per-workspace step — redeem a community-license key under{' '}
+        <a href="/app/settings/billing" style={{ color: 'var(--accent, #6366f1)' }}>Settings → Billing</a>.
+      </p>
+
       {!cfg.can_publish && (
         <div style={{ marginTop: 16, border: `1px solid ${line}`, borderRadius: 10, padding: 16 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: ink, marginBottom: 4 }}>Get a free community key</div>

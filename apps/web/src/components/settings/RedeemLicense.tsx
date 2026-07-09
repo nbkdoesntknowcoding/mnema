@@ -24,9 +24,9 @@ export function RedeemLicense(): JSX.Element {
   return (
     <div style={{ marginTop: 32, padding: 16, border: '0.5px solid var(--border, rgba(0,0,0,0.08))', borderRadius: 10, maxWidth: 460 }}>
       <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', marginBottom: 4 }}>Have a license key?</div>
-      <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginBottom: 12 }}>Enter it to activate your plan.</div>
+      <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginBottom: 12 }}>Paste a plan key (MNEMA-…) or a community-license key to activate.</div>
       <div style={{ display: 'flex', gap: 8 }}>
-        <input value={key} onChange={(e) => setKey(e.target.value)} placeholder="MNEMA-XXXX-XXXX-XXXX-XXXX"
+        <input value={key} onChange={(e) => setKey(e.target.value)} placeholder="Paste your license or community key"
           style={{ flex: 1, padding: '7px 10px', borderRadius: 8, fontSize: 12.5, fontFamily: 'var(--mono, monospace)', border: '0.5px solid var(--border, rgba(0,0,0,0.08))', background: 'var(--surface, #fff)', color: 'var(--ink)' }} />
         <button onClick={redeem} disabled={state === 'busy' || !key.trim()}
           style={{ padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: 500, color: '#fff', background: 'var(--accent, #6366f1)', border: 'none', cursor: 'pointer' }}>
