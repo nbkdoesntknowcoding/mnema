@@ -72,13 +72,7 @@ export function AccessRequestsInbox(): JSX.Element {
       {err && <div style={{ ...card, borderColor: '#ef4444', color: '#ef4444', marginBottom: 14 }}>{err}</div>}
       {loading && <div style={{ color: muted, fontSize: 13, padding: '20px 4px' }}>Loading…</div>}
 
-      {!loading && rows.length === 0 && (
-        <div style={{ ...card, textAlign: 'center', color: muted, padding: '48px 24px' }}>
-          {box === 'incoming'
-            ? 'No one has requested access to your documents.'
-            : "You haven't requested access to any documents."}
-        </div>
-      )}
+      {!loading && rows.length === 0 && <EmptyState box={box} />}
 
       {!loading && box === 'incoming' && pending.length > 0 && (
         <div style={{ marginBottom: resolved.length ? 28 : 0 }}>
@@ -134,6 +128,44 @@ export function AccessRequestsInbox(): JSX.Element {
   );
 }
 
+function EmptyState({ box }: { box: 'incoming' | 'outgoing' }): JSX.Element {
+  const isIncoming = box === 'incoming';
+  return (
+    <div style={{ ...card, textAlign: 'center', padding: '48px 24px' }}>
+      <div style={{
+        display:        'inline-flex',
+        alignItems:     'center',
+        justifyContent: 'center',
+        width:          44,
+        height:         44,
+        borderRadius:   '50%',
+        background:     `color-mix(in srgb, ${accent} 10%, transparent)`,
+        marginBottom:   14,
+      }}>
+        {isIncoming ? <InboxIcon /> : <SendIcon />}
+      </div>
+      <div style={{ fontSize: 14, fontWeight: 500, color: ink }}>
+        {isIncoming ? 'No access requests yet.' : "You haven't requested access to any documents yet."}
+      </div>
+    </div>
+  );
+}
+function InboxIcon(): JSX.Element {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={accent} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M22 12h-6l-2 3h-4l-2-3H2" />
+      <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11Z" />
+    </svg>
+  );
+}
+function SendIcon(): JSX.Element {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={accent} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m22 2-7 20-4-9-9-4Z" />
+      <path d="M22 2 11 13" />
+    </svg>
+  );
+}
 function SectionLabel({ children }: { children: React.ReactNode }): JSX.Element {
   return <div style={{ fontSize: 11, fontWeight: 600, color: muted, textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 10px 2px' }}>{children}</div>;
 }
