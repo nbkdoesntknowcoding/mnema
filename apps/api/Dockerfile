@@ -40,27 +40,29 @@ COPY apps/api/package.json ./apps/api/
 # Production deps only
 RUN pnpm install --frozen-lockfile --prod
 
-# Copy compiled output from builder
-COPY --from=builder /app/apps/api/dist ./apps/api/dist
-COPY --from=builder /app/packages/shared ./packages/shared
-COPY --from=builder /app/packages/schema/dist ./packages/schema/dist
+# Copy compiled output from builder — owned by `node` at copy time (near-free),
+# instead of a separate recursive `chown -R /app` layer.
+COPY --chown=node:node --from=builder /app/apps/api/dist ./apps/api/dist
+COPY --chown=node:node --from=builder /app/packages/shared ./packages/shared
+COPY --chown=node:node --from=builder /app/packages/schema/dist ./packages/schema/dist
 
 # Migrations folder needed at runtime for drizzle
-COPY apps/api/drizzle ./apps/api/drizzle
+COPY --chown=node:node apps/api/drizzle ./apps/api/drizzle
 
 # Static templates (not emitted by tsc — copy from source)
-COPY apps/api/src/templates ./apps/api/dist/templates
+COPY --chown=node:node apps/api/src/templates ./apps/api/dist/templates
 # Email HTML templates (inliner reads dist/emails/html/*.html at runtime)
-COPY apps/api/src/emails/html ./apps/api/dist/emails/html
+COPY --chown=node:node apps/api/src/emails/html ./apps/api/dist/emails/html
 
 HEALTHCHECK --interval=10s --timeout=5s --retries=12 --start-period=40s \
   CMD node -e "fetch('http://localhost:8080/health').then(r => process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
-# Run as the image's built-in unprivileged `node` user (uid 1000). /app is owned
-# by root after the COPYs above; hand it (and node's home for any transient
-# writes) to `node` so the runtime can write caches/tmp without root. Port 8080
-# is >1024, so the non-root bind is fine.
-RUN chown -R node:node /app
+# Run as the image's built-in unprivileged `node` user (uid 1000). App code and
+# build output are COPYed --chown=node:node above; the prod node_modules stays
+# root-owned and world-readable, which is all the runtime needs — nothing is
+# written under /app at runtime (uploads → object storage, sessions → sealed
+# cookies). This drops the ~170s recursive `chown -R /app`. Port 8080 is >1024,
+# so the non-root bind is fine.
 USER node
 
 EXPOSE 8080

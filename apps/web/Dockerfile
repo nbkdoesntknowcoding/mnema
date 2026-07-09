@@ -51,15 +51,18 @@ COPY apps/web/package.json ./apps/web/
 
 RUN pnpm install --frozen-lockfile --prod
 
-# Compiled output + workspace packages
-COPY --from=builder /app/apps/web/dist ./apps/web/dist
-COPY --from=builder /app/packages/shared ./packages/shared
-COPY --from=builder /app/packages/schema/dist ./packages/schema/dist
+# Compiled output + workspace packages — owned by `node` at copy time (near-free),
+# instead of a separate recursive `chown -R /app` layer.
+COPY --chown=node:node --from=builder /app/apps/web/dist ./apps/web/dist
+COPY --chown=node:node --from=builder /app/packages/shared ./packages/shared
+COPY --chown=node:node --from=builder /app/packages/schema/dist ./packages/schema/dist
 
-# Run as the image's built-in unprivileged `node` user (uid 1000). Hand /app to
-# `node` for any runtime cache writes. Port 4321 is >1024, so binding as non-root
-# is fine.
-RUN chown -R node:node /app
+# Run as the image's built-in unprivileged `node` user (uid 1000). Build output is
+# COPYed --chown=node:node above; the prod node_modules stays root-owned and
+# world-readable. Nothing is written under /app at runtime — sessions are sealed
+# iron-session cookies, not Astro's filesystem session store — so read-only
+# node_modules is all the runtime needs. This drops the ~124s recursive
+# `chown -R /app`. Port 4321 is >1024, so binding as non-root is fine.
 USER node
 
 EXPOSE 4321

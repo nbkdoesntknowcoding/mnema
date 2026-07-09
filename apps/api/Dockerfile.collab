@@ -33,13 +33,14 @@ COPY apps/api/package.json ./apps/api/
 
 RUN pnpm install --frozen-lockfile --prod
 
-COPY --from=builder /app/apps/api/dist ./apps/api/dist
-COPY --from=builder /app/packages/shared ./packages/shared
-COPY --from=builder /app/packages/schema/dist ./packages/schema/dist
+COPY --chown=node:node --from=builder /app/apps/api/dist ./apps/api/dist
+COPY --chown=node:node --from=builder /app/packages/shared ./packages/shared
+COPY --chown=node:node --from=builder /app/packages/schema/dist ./packages/schema/dist
 
-# Run as the image's built-in unprivileged `node` user (uid 1000). Port 1234 is
-# >1024, so binding as non-root is fine.
-RUN chown -R node:node /app
+# Run as the image's built-in unprivileged `node` user (uid 1000). Build output is
+# COPYed --chown=node:node above; the prod node_modules stays root-owned and
+# world-readable (read-only at runtime — nothing is written under /app). This
+# drops the recursive `chown -R /app`. Port 1234 is >1024, so non-root binds fine.
 USER node
 
 EXPOSE 1234
