@@ -189,6 +189,8 @@ export function DevSettings({ workspaceId, isOwner }: DevSettingsProps): JSX.Ele
             </code>
             <button
               onClick={() => void copyText(newToken, 'newtoken')}
+              aria-label="Copy hook token"
+              title="Copy hook token"
               style={copyBtnStyle(copied === 'newtoken')}
             >
               {copied === 'newtoken' ? '✓' : 'Copy'}
@@ -288,6 +290,8 @@ export function DevSettings({ workspaceId, isOwner }: DevSettingsProps): JSX.Ele
           </code>
           <button
             onClick={() => void copyText(config.installCommand, 'install')}
+            aria-label="Copy install command"
+            title="Copy install command"
             style={copyBtnStyle(copied === 'install')}
           >
             {copied === 'install' ? '✓' : 'Copy'}
@@ -314,6 +318,8 @@ export function DevSettings({ workspaceId, isOwner }: DevSettingsProps): JSX.Ele
           </code>
           <button
             onClick={() => void copyText(config.hookReceiverUrl, 'hookurl')}
+            aria-label="Copy hook receiver URL"
+            title="Copy hook receiver URL"
             style={copyBtnStyle(copied === 'hookurl')}
           >
             {copied === 'hookurl' ? '✓' : 'Copy'}
@@ -341,6 +347,8 @@ export function DevSettings({ workspaceId, isOwner }: DevSettingsProps): JSX.Ele
           </pre>
           <button
             onClick={() => void copyText(config.mcpConfigSnippet, 'mcp')}
+            aria-label="Copy MCP config snippet"
+            title="Copy MCP config snippet"
             style={copyBtnStyle(copied === 'mcp')}
           >
             {copied === 'mcp' ? '✓' : 'Copy'}
