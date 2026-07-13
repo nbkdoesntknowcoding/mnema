@@ -18,6 +18,12 @@ Pick your client:
 
 Not connecting an assistant? Use the [REST API](../api/) directly.
 
+## Content integrations
+
+Beyond AI clients, Mnema can sync content from other services:
+
+- [Google Drive](./drive.md) — two-way folder sync between a Mnema folder and a Google Drive folder
+
 ## How the OAuth connect works (all clients)
 
 1. You add the MCP URL in the client.
