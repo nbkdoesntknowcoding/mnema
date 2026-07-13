@@ -204,15 +204,25 @@ export async function pullLink(link: DriveLink): Promise<SyncResult> {
     }
 
     try {
-      const bytes = await downloadDriveFile(drive, f.id);
       if (isTextExt(ext)) {
+        const bytes = await downloadDriveFile(drive, f.id);
         await upsertDocFromDrive(link, f, bytes.toString('utf8'), mapping);
-      } else {
+      } else if (ext === 'pdf' || ext === 'docx') {
+        // Binaries land in `attachments`, whose `format` is docx|pdf (v1). Other
+        // binary types are skipped rather than stored with a foreign format.
         if (!isR2Configured()) { res.skipped++; continue; } // no blob store → can't hold binaries
+        const bytes = await downloadDriveFile(drive, f.id);
         await upsertAttachmentFromDrive(link, f, ext, bytes, mapping);
+      } else {
+        // eslint-disable-next-line no-console
+        console.warn(`[drive-sync] link=${link.id} skipping unsupported type "${ext}" (${f.name})`);
+        res.skipped++;
+        continue;
       }
       if (mapping) res.updated++; else res.created++;
-    } catch {
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn(`[drive-sync] link=${link.id} pull failed for "${f.name}":`, err instanceof Error ? err.message : err);
       res.skipped++;
     }
   }
@@ -265,7 +275,9 @@ export async function pushLink(link: DriveLink): Promise<SyncResult> {
         );
       }
       res.pushed++;
-    } catch {
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn(`[drive-sync] link=${link.id} push failed for doc "${d.title}":`, err instanceof Error ? err.message : err);
       res.skipped++;
     }
   }

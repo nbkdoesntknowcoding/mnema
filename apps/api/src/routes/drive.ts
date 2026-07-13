@@ -10,7 +10,6 @@
  *   PATCH /api/drive/links/:id        → edit types / direction / conflict policy / pause
  *   DELETE /api/drive/links/:id       → unlink
  *   POST  /api/drive/links/:id/sync   → enqueue a sync now
- *   POST  /api/drive/webhook          → Google push-notification receiver (public + token)
  *
  * The refresh token is user-scoped (their Google Drive); links + mappings are
  * workspace-scoped and enforced app-layer (filter by workspace_id + requireRole).
@@ -251,22 +250,6 @@ export const driveRoutes: FastifyPluginAsync = async (app) => {
     if (!link) return reply.code(404).send({ error: 'link_not_found' });
     await enqueueDriveSync({ linkId: id, reason: 'manual' });
     return reply.send({ ok: true, queued: true });
-  });
-
-  // ── Google push-notification receiver ──────────────────────────────────────
-  // Public route (no auth cookie survives Google's POST). We authenticate by
-  // matching the channel id we stored on the link when registering the watch.
-  app.post('/api/drive/webhook', async (req, reply) => {
-    const channelId = req.headers['x-goog-channel-id'];
-    const state = req.headers['x-goog-resource-state'];
-    if (typeof channelId !== 'string') return reply.code(204).send();
-    // 'sync' is Google's initial handshake ping — ack and ignore.
-    if (state === 'sync') return reply.code(204).send();
-    const [link] = await db.select({ id: driveFolderLinks.id }).from(driveFolderLinks)
-      .where(eq(driveFolderLinks.driveChannelId, channelId))
-      .limit(1);
-    if (link) await enqueueDriveSync({ linkId: link.id, reason: 'webhook' });
-    return reply.code(204).send();
   });
 
   // ── Conflicts for a link (for the resolver UI) ─────────────────────────────

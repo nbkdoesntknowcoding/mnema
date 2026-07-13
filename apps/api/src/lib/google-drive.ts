@@ -23,10 +23,10 @@ const SCOPE_URLS: Record<'drive.file' | 'drive', string> = {
   drive: 'https://www.googleapis.com/auth/drive',
 };
 
-/** File extensions synced by default when a link doesn't set its own allow-list. */
-export const DEFAULT_ACCEPTED_TYPES = [
-  'md', 'markdown', 'txt', 'pdf', 'doc', 'docx', 'csv', 'png', 'jpg', 'jpeg',
-];
+// File extensions synced by default when a link doesn't set its own allow-list.
+// v1 syncs text (→ Mnema docs) and docx/pdf (→ attachments, the formats the
+// attachment pipeline models). More binary types can follow as a separate change.
+export const DEFAULT_ACCEPTED_TYPES = ['md', 'markdown', 'txt', 'pdf', 'docx'];
 
 /** Extensions that become Mnema docs (text). Everything else becomes an attachment. */
 const TEXT_EXTS = new Set(['md', 'markdown', 'txt']);
@@ -49,11 +49,6 @@ export function driveConfigured(): boolean {
 
 export function driveScopeUrl(): string {
   return SCOPE_URLS[config.GOOGLE_DRIVE_SCOPE];
-}
-
-/** Secret used to sign Drive push-notification channel tokens. */
-export function driveWebhookSecret(): string {
-  return config.DRIVE_WEBHOOK_SECRET ?? config.SECRETBOX_MASTER_KEY;
 }
 
 export function extOf(name: string): string {
@@ -163,43 +158,6 @@ export async function listFilesInFolder(drive: DriveClient, driveFolderId: strin
     pageToken = res.data.nextPageToken ?? undefined;
   } while (pageToken);
   return out;
-}
-
-/** The current changes-API start token (cursor) for incremental pulls. */
-export async function getStartPageToken(drive: DriveClient): Promise<string> {
-  const res = await drive.changes.getStartPageToken({});
-  return res.data.startPageToken!;
-}
-
-export interface DriveChangePage { files: DriveFile[]; removedIds: string[]; newPageToken: string }
-
-/** Fetch the batch of changes since `pageToken`. Caller filters to linked folders. */
-export async function listChanges(drive: DriveClient, pageToken: string): Promise<DriveChangePage> {
-  const files: DriveFile[] = [];
-  const removedIds: string[] = [];
-  let token: string | undefined = pageToken;
-  let newPageToken = pageToken;
-  do {
-    const { data }: { data: drive_v3.Schema$ChangeList } = await drive.changes.list({
-      pageToken: token,
-      fields: `nextPageToken, newStartPageToken, changes(removed, fileId, file(${FILE_FIELDS}, parents))`,
-      pageSize: 200,
-      spaces: 'drive',
-    });
-    for (const c of data.changes ?? []) {
-      if (c.removed || c.file?.trashed) { if (c.fileId) removedIds.push(c.fileId); continue; }
-      if (c.file?.id && c.file.mimeType !== 'application/vnd.google-apps.folder') files.push(toDriveFile(c.file));
-    }
-    if (data.newStartPageToken) newPageToken = data.newStartPageToken;
-    token = data.nextPageToken ?? undefined;
-  } while (token);
-  return { files, removedIds, newPageToken };
-}
-
-/** The parent folder ids of a Drive file (to test membership of a linked folder). */
-export async function getFileParents(drive: DriveClient, fileId: string): Promise<string[]> {
-  const res = await drive.files.get({ fileId, fields: 'parents' });
-  return res.data.parents ?? [];
 }
 
 /** Download a Drive file's bytes. */

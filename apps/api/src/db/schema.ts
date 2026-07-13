@@ -1707,11 +1707,6 @@ export const driveFolderLinks = pgTable(
     acceptedTypes: text('accepted_types').array().notNull().default(sql`ARRAY[]::text[]`),
     // 'lww' (last-writer-wins by modified time) or 'manual' (flag conflicts, never overwrite).
     conflictPolicy: text('conflict_policy').notNull().default('manual'),
-    // Drive changes-API cursor for incremental pulls.
-    drivePageToken: text('drive_page_token'),
-    // Drive push-notification channel (id + expiry) so we can stop/renew it.
-    driveChannelId: text('drive_channel_id'),
-    driveChannelExpiresAt: timestamp('drive_channel_expires_at', { withTimezone: true }),
     lastSyncedAt: timestamp('last_synced_at', { withTimezone: true }),
     // 'active' | 'paused' | 'error'
     status: text('status').notNull().default('active'),

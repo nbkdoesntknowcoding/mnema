@@ -1,9 +1,9 @@
 /**
  * BullMQ queue for Google Drive folder sync (Phase 10).
  *
- * Enqueued from routes/drive.ts (manual "Sync now" + the push webhook) and the
- * reconcile cron. The drive-sync worker runs syncLink() for the link. A stable
- * jobId per link debounces concurrent syncs of the same folder.
+ * Enqueued from routes/drive.ts (manual "Sync now"); a reconcile cron can enqueue
+ * with reason 'cron' as a follow-up. The drive-sync worker runs syncLink() for the
+ * link. A stable jobId per link debounces concurrent syncs of the same folder.
  */
 import { Queue } from 'bullmq';
 import { redisConnection } from '../lib/redis.js';
@@ -12,7 +12,7 @@ export const DRIVE_SYNC_QUEUE_NAME = 'drive-sync';
 
 export interface DriveSyncJobData {
   linkId: string;
-  reason: 'manual' | 'webhook' | 'cron' | 'push';
+  reason: 'manual' | 'cron';
 }
 
 export const driveSyncQueue = new Queue<DriveSyncJobData>(DRIVE_SYNC_QUEUE_NAME, {

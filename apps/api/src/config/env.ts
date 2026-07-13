@@ -238,9 +238,6 @@ const envSchema = z.object({
   GOOGLE_DRIVE_SCOPE:         z.enum(['drive.file', 'drive']).default('drive.file'),
   // Skip Drive files larger than this many megabytes when syncing.
   DRIVE_SYNC_MAX_FILE_MB:     z.coerce.number().int().positive().default(50),
-  // Signs the per-link Drive push-notification channel tokens. Falls back to
-  // SECRETBOX_MASTER_KEY when unset (see lib/google-drive.ts).
-  DRIVE_WEBHOOK_SECRET:       z.string().min(1).optional(),
 
   // Phase C — internal meeting-bot controller (the express service that asks
   // Recall to send the bot). Defaults to the Docker-network address; the API

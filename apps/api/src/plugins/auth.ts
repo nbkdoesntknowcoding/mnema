@@ -95,9 +95,6 @@ export const authPlugin: FastifyPluginAsync = fp(async (app) => {
     // /callback auth: OnlyOffice JWT signature. /file auth: tenantId query param.
     if (url === '/api/onlyoffice/callback') return;
     if (url.startsWith('/api/onlyoffice/') && url.endsWith('/file')) return;
-    // Google Drive push notifications — server-to-server POST from Google with no
-    // cookie. Authenticated in-handler by matching the stored channel id.
-    if (url === '/api/drive/webhook') return;
 
     const token = req.cookies[JWT_COOKIE_NAME] ?? extractBearer(req.headers.authorization);
     if (!token) {
