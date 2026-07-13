@@ -632,7 +632,39 @@ export function ProjectsPage(): JSX.Element {
 
       {/* Grid */}
       {loading ? (
-        <p style={{ color: T.textMuted, fontSize: 13 }}>Loading…</p>
+        <div role="status" aria-live="polite">
+          <span style={{ position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, overflow: 'hidden', clip: 'rect(0,0,0,0)', whiteSpace: 'nowrap', border: 0 }}>
+            Loading projects…
+          </span>
+          <style>{`
+            @keyframes proj-skel-pulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 0.9; } }
+            .proj-skel { background: ${T.surface3}; border-radius: 6px; animation: proj-skel-pulse 1.4s ease-in-out infinite; }
+          `}</style>
+          <div aria-hidden="true" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} style={{ ...glassCard, padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 11 }}>
+                {/* Header: icon + dot + name */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                  <div className="proj-skel" style={{ width: 16, height: 16, borderRadius: 5, flexShrink: 0 }} />
+                  <div className="proj-skel" style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0 }} />
+                  <div className="proj-skel" style={{ flex: 1, maxWidth: 150, height: 13 }} />
+                </div>
+                {/* Description */}
+                <div className="proj-skel" style={{ height: 10, width: '82%' }} />
+                {/* Progress bar */}
+                <div className="proj-skel" style={{ height: 3, width: '100%', borderRadius: 3 }} />
+                {/* Footer: task count + action buttons */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div className="proj-skel" style={{ height: 10, width: 52 }} />
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <div className="proj-skel" style={{ height: 25, width: 60, borderRadius: 7 }} />
+                    <div className="proj-skel" style={{ height: 25, width: 72, borderRadius: 7 }} />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       ) : projects.length === 0 ? (
         <div style={{ ...glassCard, padding: '48px 32px', textAlign: 'center', maxWidth: 440, margin: '0 auto' }}>
           <p style={{ margin: '0 0 8px', fontSize: 15, color: T.textPrimary, fontWeight: 600 }}>No projects yet</p>
