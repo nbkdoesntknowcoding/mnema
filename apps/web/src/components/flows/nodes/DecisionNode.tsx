@@ -1,6 +1,7 @@
 import { Handle, Position, type NodeProps } from '@xyflow/react';
-import { NodeShell, TypeBadge } from './NodeShell';
+import { NodeShell } from './NodeShell';
 import { FLOW_TOKENS as T, handleStyle } from '../tokens';
+import { useFlowUI } from '../flow-ui-context';
 
 interface DecisionNodeData extends Record<string, unknown> {
   title: string;
@@ -9,68 +10,58 @@ interface DecisionNodeData extends Record<string, unknown> {
   question?: string;
   branches?: Record<string, unknown>;
   isEntry?: boolean;
-  // Decision nodes never get isExit
 }
 
-export function DecisionNode({ data, selected, isConnectable }: NodeProps) {
+export function DecisionNode({ id, data, selected, isConnectable }: NodeProps) {
   const d = data as DecisionNodeData;
-  const branches = Object.keys(d.branches ?? { yes: null, no: null });
-  const branchCount = branches.length;
-  // Evenly space handles: 2 branches → 33%/67%, 3 → 25%/50%/75%
-  const branchPositions = branches.map((_, i) => ((i + 1) / (branchCount + 1)) * 100);
-  const question = d.question ?? d.condition;
+  const { setPeek, onComment, commentsByNode } = useFlowUI();
+  const accent = T.decision.accent;
+
+  const branches = Object.keys(d.branches ?? { if: null, else: null });
+  const n = branches.length;
+  // 2 branches → 30% / 70% (matches the design fork); N → evenly spaced.
+  const yFor = (i: number) => (n === 2 ? (i === 0 ? 30 : 70) : ((i + 1) / (n + 1)) * 100);
+  const question = d.question ?? d.condition ?? d.title;
+
+  const customHandles = (
+    <>
+      <Handle type="target" position={Position.Left} isConnectable={isConnectable}
+        style={handleStyle(accent, { top: 30 })} />
+      {branches.map((branch, i) => (
+        <div key={branch}>
+          <span style={{
+            position: 'absolute', right: 8, top: `${yFor(i)}%`, transform: 'translateY(-140%)',
+            fontFamily: T.fontMono, fontSize: 8.5, letterSpacing: '0.08em',
+            color: i === 0 ? accent : 'var(--ink-muted)', pointerEvents: 'none', whiteSpace: 'nowrap',
+          }}>{branch.toUpperCase()} →</span>
+          <Handle
+            id={branch}
+            type="source"
+            position={Position.Right}
+            isConnectable={isConnectable}
+            style={handleStyle(accent, { top: `${yFor(i)}%` })}
+          />
+        </div>
+      ))}
+    </>
+  );
 
   return (
-    <NodeShell kind="decision" selected={!!selected} isEntry={d.isEntry}>
-      <TypeBadge label="Decision" icon="⑂" colour={T.decision.accent} />
-
-      {question
-        ? <p style={{
-            fontSize: 14, fontFamily: T.fontDisplay,
-            color: '#fafafa', lineHeight: 1.4,
-            margin: '0 0 10px 0', fontWeight: 400,
-          }}>{question}</p>
-        : <p style={{ fontSize: 13, color: '#52525b', fontStyle: 'italic', margin: '0 0 10px 0' }}>
-            No question written
-          </p>
-      }
-
-      {/* Branch chips */}
-      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 4 }}>
-        {branches.map(branch => (
-          <span key={branch} style={{
-            fontFamily: T.fontMono, fontSize: 10,
-            background: T.branchPillBg,
-            border: `0.5px solid ${T.branchPillBorder}`,
-            color: T.branchPillText,
-            borderRadius: 5, padding: '3px 8px',
-          }}>{branch}</span>
-        ))}
-      </div>
-
-      {/* Single target handle — top centre */}
-      <Handle
-        type="target"
-        position={Position.Top}
-        isConnectable={isConnectable}
-        style={handleStyle()}
+    <div onMouseEnter={() => setPeek(id)} onMouseLeave={() => setPeek(null)}>
+      <NodeShell
+        id={id}
+        accent={accent}
+        eyebrow="IF / ELSE"
+        title={question}
+        body={d.title !== question ? d.title : undefined}
+        selected={!!selected}
+        notched
+        connectable={isConnectable}
+        commentCount={commentsByNode[id]}
+        onComment={() => onComment(id)}
+        width={220}
+        customHandles={customHandles}
       />
-
-      {/* One source handle per branch, evenly spaced at bottom */}
-      {branches.map((branch, i) => (
-        <Handle
-          key={branch}
-          id={branch}
-          type="source"
-          position={Position.Bottom}
-          isConnectable={isConnectable}
-          style={handleStyle({
-            left:      `${branchPositions[i]}%`,
-            transform: 'translateX(-50%)',
-            bottom:    -6,
-          })}
-        />
-      ))}
-    </NodeShell>
+    </div>
   );
 }

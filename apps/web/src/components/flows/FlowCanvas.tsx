@@ -17,6 +17,8 @@ import {
   type Connection,
   type OnConnect,
   ConnectionLineType,
+  Position,
+  useReactFlow,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import './flow-canvas.css';
@@ -30,16 +32,23 @@ import { FlowEdge }        from './edges/FlowEdge';
 import { BranchEdge }      from './edges/BranchEdge';
 import { NodeInspector }   from './NodeInspector';
 import { FlowHeader, type SaveState } from './FlowHeader';
-import { WalkSimulator }        from './WalkSimulator';
+import { WalkOverlay }          from './WalkOverlay';
 import { DocSidebar }           from './DocSidebar';
-import { AddNodePalette }       from './AddNodePalette';
+import { NodePaletteBar }       from './NodePaletteBar';
 import { VersionHistoryPanel }  from './VersionHistoryPanel';
 import { RunHistoryPanel, stepStatusColor }      from './RunHistoryPanel';
 import type { StepRow }         from './RunHistoryPanel';
 import { PublishModal }         from './PublishModal';
 import { detectCycle }          from '../../lib/flows/cycle-detect';
 import { layeredLayout }        from '../../lib/flows/auto-layout';
-import { FLOW_TOKENS as T }     from './tokens';
+import { FLOW_TOKENS as T, accentFor } from './tokens';
+import { useFlowPresence } from './useFlowPresence';
+import { PresenceCluster, PresenceWorld } from './PresenceLayer';
+import { FlowUIContext }        from './flow-ui-context';
+import { PeekTooltip }          from './PeekTooltip';
+import { ExpandedDocPreview, FullDocPanel } from './DocPreviewLayers';
+import { useFlowComments } from './useFlowComments';
+import { FlowCommentThread } from './FlowCommentThread';
 
 export interface Flow {
   id: string;
@@ -50,6 +59,8 @@ export interface Flow {
   draft_version_id: string;
   has_unpublished_changes: boolean;
   is_published: boolean;
+  /** Hub listing slug when this flow is published to the community; null otherwise. */
+  community_slug: string | null;
   nodes: Array<{
     client_node_id: string;
     kind: 'doc' | 'docs' | 'instruction' | 'decision' | 'capture';
@@ -75,6 +86,9 @@ function mnemaNodeToRF(n: Flow['nodes'][number]): Node {
     type: n.kind,
     position: { x: n.position_x, y: n.position_y },
     data: { ...n.data, title: n.title, kind: n.kind },
+    // Horizontal (left→right) flow: edges leave the right, enter the left.
+    sourcePosition: Position.Right,
+    targetPosition: Position.Left,
     draggable: true, selectable: true, connectable: true, deletable: true,
   };
 }
@@ -153,7 +167,7 @@ interface InnerProps { flow: Flow }
 
 function InnerCanvas({ flow }: InnerProps) {
   const initialNodes = useMemo(() => flow.nodes.map(mnemaNodeToRF), [flow.nodes]);
-  const initialEdges = useMemo(() =>
+  const initialEdges = useMemo<Edge[]>(() =>
     flow.edges.map((e, i) => ({
       id:           `${e.from_node_id}__${e.to_node_id}__${e.from_socket}__${i}`,
       source:       e.from_node_id,
@@ -208,7 +222,22 @@ function InnerCanvas({ flow }: InnerProps) {
   }, [enrichedNodes, runStatusByNode]);
 
   const [selectedNodeId, setSelectedNodeId]       = useState<string | null>(null);
+
+  // ─── Live presence (cursors / avatars / remote selection) ──────────────────
+  const rf = useReactFlow();
+  const { peers, sendCursor, sendSelection } = useFlowPresence(flow.id);
+  useEffect(() => { sendSelection(selectedNodeId); }, [selectedNodeId, sendSelection]);
+  const handlePresenceMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!peers.length) return;                       // no one to broadcast to
+    const p = rf.screenToFlowPosition({ x: e.clientX, y: e.clientY });
+    sendCursor(p.x, p.y);
+  }, [rf, sendCursor, peers.length]);
+
+  // ─── Node comment threads ──────────────────────────────────────────────────
+  const { commentsByNode, threadFor, addComment } = useFlowComments(flow.id);
+  const [threadNodeId, setThreadNodeId] = useState<string | null>(null);
   const [walkMode,       setWalkMode]             = useState(false);
+  const [walkFocusNodeId, setWalkFocusNodeId]     = useState<string | null>(null);
   const [docsOpen,       setDocsOpen]             = useState(false);
   const [runsOpen,       setRunsOpen]             = useState(false);
   const [historyOpen,    setHistoryOpen]          = useState(false);
@@ -219,6 +248,65 @@ function InnerCanvas({ flow }: InnerProps) {
   const [lastSavedAt,    setLastSavedAt]          = useState<Date | null>(null);
   const [isPublished,    setIsPublished]          = useState(!!flow.is_published);
   const [hasUnpublished, setHasUnpublished]       = useState(flow.has_unpublished_changes ?? !flow.is_published);
+
+  // ─── Hifi interaction state (hover peek + edge lighting + doc preview) ─────
+  const [hoverNodeId,    setHoverNodeId]    = useState<string | null>(null);
+  const [peekNodeId,     setPeekNodeId]     = useState<string | null>(null);
+  const [expandedNodeId, setExpandedNodeId] = useState<string | null>(null); // level 2
+  const [panelNodeId,    setPanelNodeId]    = useState<string | null>(null); // level 3
+
+  // Accent per node (directive/step split on isEntry) — drives edge colour.
+  const accentByNode = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const n of enrichedNodes) {
+      m.set(n.id, accentFor(n.data.kind as NodeKind, !!n.data.isEntry));
+    }
+    return m;
+  }, [enrichedNodes]);
+
+  // An edge is "active" when its source or target node is hovered or selected.
+  const activeNodeIds = useMemo(() => {
+    const s = new Set<string>();
+    if (hoverNodeId) s.add(hoverNodeId);
+    if (selectedNodeId) s.add(selectedNodeId);
+    return s;
+  }, [hoverNodeId, selectedNodeId]);
+
+  // Inject accent + active into each edge's data for FlowEdge/BranchEdge.
+  const displayEdges = useMemo(() =>
+    edges.map(e => ({
+      ...e,
+      data: {
+        ...e.data,
+        accent: accentByNode.get(e.source) ?? '#b8bcc4',
+        active: activeNodeIds.has(e.source) || activeNodeIds.has(e.target),
+      },
+    })),
+    [edges, accentByNode, activeNodeIds],
+  );
+
+  // setPeek doubles as the hover signal (drives edge lighting for every node)
+  // and the doc/capture peek tooltip.
+  const handleSetPeek = useCallback((nodeId: string | null) => {
+    setHoverNodeId(nodeId);
+    if (!nodeId) { setPeekNodeId(null); return; }
+    const n = nodesRef.current.find(x => x.id === nodeId);
+    const kind = n?.data.kind as NodeKind | undefined;
+    setPeekNodeId(kind === 'doc' || kind === 'capture' ? nodeId : null);
+  }, []);
+
+  // Esc precedence for the doc-preview layers: full panel → expanded card.
+  useEffect(() => {
+    if (!panelNodeId && !expandedNodeId) return;
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      if (panelNodeId) setPanelNodeId(null);
+      else if (expandedNodeId) setExpandedNodeId(null);
+    };
+    window.addEventListener('keydown', onEsc, true);
+    return () => window.removeEventListener('keydown', onEsc, true);
+  }, [panelNodeId, expandedNodeId]);
 
   const rfInstance   = useRef<{ getViewport: () => { x: number; y: number; zoom: number }; setCenter: (x: number, y: number, opts?: { zoom?: number; duration?: number }) => void; fitView: (opts?: { padding?: number; duration?: number; maxZoom?: number }) => void } | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -347,12 +435,13 @@ function InnerCanvas({ flow }: InnerProps) {
   // ─── Node add ────────────────────────────────────────────────────────────
 
   const handleAddNode = useCallback((kind: NodeKind) => {
+    // Horizontal flow: place the new node to the right of the right-most node.
     const lastNode = nodesRef.current.reduce<Node | null>(
-      (prev, n) => (!prev || n.position.y > prev.position.y ? n : prev), null,
+      (prev, n) => (!prev || n.position.x > prev.position.x ? n : prev), null,
     );
     const pos = lastNode
-      ? { x: lastNode.position.x, y: lastNode.position.y + 180 }
-      : { x: 400, y: 200 };
+      ? { x: lastNode.position.x + 340, y: lastNode.position.y }
+      : { x: 200, y: 300 };
 
     const label = kind === 'doc' ? 'New Doc' : kind === 'docs' ? 'New Docs'
       : kind === 'instruction' ? 'New Instruction' : kind === 'capture' ? 'New Capture' : 'New Decision';
@@ -361,6 +450,7 @@ function InnerCanvas({ flow }: InnerProps) {
       id, type: kind,
       position: pos,
       data: { ...defaultData(kind), title: label, kind },
+      sourcePosition: Position.Right, targetPosition: Position.Left,
       draggable: true, selectable: true, connectable: true, deletable: true,
     };
     pushHistory(nodesRef.current, edgesRef.current);
@@ -381,10 +471,10 @@ function InnerCanvas({ flow }: InnerProps) {
     const pos = layeredLayout(
       cur.map(n => ({ id: n.id })),
       edgesRef.current.map(e => ({ source: e.source, target: e.target })),
-      { startX: 500, startY: 120 },
+      { startX: 120, startY: 420 },
     );
     pushHistory(cur, edgesRef.current);
-    setNodes(ns => ns.map(n => (pos[n.id] ? { ...n, position: pos[n.id] } : n)));
+    setNodes(ns => ns.map(n => { const p = pos[n.id]; return p ? { ...n, position: p } : n; }));
     markDirty();
     setTimeout(() => rfInstance.current?.fitView({ padding: 0.2, duration: 400 }), 60);
   }, [setNodes, markDirty, pushHistory]);
@@ -408,6 +498,7 @@ function InnerCanvas({ flow }: InnerProps) {
       id, type: 'doc',
       position: { x: x - 120, y: y - 40 },
       data: { doc_id: doc.id, doc_title: doc.title, title: doc.title, kind: 'doc', instruction: '' },
+      sourcePosition: Position.Right, targetPosition: Position.Left,
       draggable: true, selectable: true, connectable: true, deletable: true,
     };
     pushHistory(nodesRef.current, edgesRef.current);
@@ -479,7 +570,53 @@ function InnerCanvas({ flow }: InnerProps) {
 
   const isEmpty = enrichedNodes.length === 0;
 
+  // ─── Walk mode: dim non-focus nodes + pan camera to the focus node ─────────
+  const walkNodes = useMemo(() => {
+    if (!walkMode) return displayNodes;
+    return displayNodes.map((n) => ({
+      ...n,
+      style: {
+        ...(n.style ?? {}),
+        opacity: walkFocusNodeId && n.id !== walkFocusNodeId ? 0.28 : 1,
+        transition: 'opacity .3s cubic-bezier(.4,0,.2,1)',
+      },
+    }));
+  }, [walkMode, walkFocusNodeId, displayNodes]);
+
+  const handleWalkFocus = useCallback((nodeId: string | null) => {
+    setWalkFocusNodeId(nodeId);
+    if (!nodeId) return;
+    const n = nodesRef.current.find((x) => x.id === nodeId);
+    if (!n) return;
+    const w = (n.measured?.width ?? 248), h = (n.measured?.height ?? 120);
+    rfInstance.current?.setCenter(n.position.x + w / 2, n.position.y + h / 2, { zoom: 0.95, duration: 500 });
+  }, []);
+
+  const exitWalk = useCallback(() => {
+    setWalkMode(false);
+    setWalkFocusNodeId(null);
+    setTimeout(() => rfInstance.current?.fitView({ padding: 0.2, duration: 400 }), 20);
+  }, []);
+
+  // ─── FlowUI context value (peek + preview + comment) ───────────────────────
+  // onPreview/onComment are filled in by the doc-preview + comment-thread work;
+  // for now they select the node so the inspector/thread surface opens.
+  const flowUI = useMemo(() => ({
+    setPeek: handleSetPeek,
+    // "Preview doc/capture" → expand-in-place (level 2). Suppress peek; don't
+    // open the node inspector (the preview surface stands on its own).
+    onPreview: (id: string) => { setPeekNodeId(null); setExpandedNodeId(id); },
+    onComment: (id: string) => setThreadNodeId((cur) => (cur === id ? null : id)),
+    commentsByNode,
+  }), [handleSetPeek, commentsByNode]);
+
+  const peekNode     = peekNodeId && !expandedNodeId && !panelNodeId ? nodes.find(n => n.id === peekNodeId) ?? null : null;
+  const threadNode   = threadNodeId ? nodes.find(n => n.id === threadNodeId) ?? null : null;
+  const expandedNode = expandedNodeId ? nodes.find(n => n.id === expandedNodeId) ?? null : null;
+  const panelNode    = panelNodeId ? nodes.find(n => n.id === panelNodeId) ?? null : null;
+
   return (
+   <FlowUIContext.Provider value={flowUI}>
     <div className="h-[calc(100vh-48px)] flex">
       <div
         className="flex-none flex flex-col items-center py-3 border-r"
@@ -517,16 +654,20 @@ function InnerCanvas({ flow }: InnerProps) {
           style={{ background: T.canvasBg }}
           onDrop={handleDrop}
           onDragOver={handleDragOver}
+          onMouseMove={handlePresenceMouseMove}
         >
-          {/* Add node palette */}
+          {/* Node-type palette — one accent icon per kind */}
           <div className="absolute top-4 right-4 z-20">
-            <AddNodePalette onAdd={handleAddNode} />
+            <NodePaletteBar onAdd={handleAddNode} />
           </div>
+
+          {/* Live presence — who else is editing */}
+          <PresenceCluster peers={peers} />
 
           <ReactFlow
             style={{ width: '100%', height: '100%' }}
-            nodes={displayNodes}
-            edges={edges}
+            nodes={walkNodes}
+            edges={displayEdges}
             onNodesChange={handleNodesChange}
             onEdgesChange={handleEdgesChange}
             onConnect={handleConnect}
@@ -557,6 +698,10 @@ function InnerCanvas({ flow }: InnerProps) {
               size={T.canvasDotSize}
               color={T.canvasDot}
             />
+
+            {/* Remote cursors + selection rings (world space, ride pan/zoom) */}
+            <PresenceWorld peers={peers} nodes={nodes} />
+
             <Panel position="top-left">
               <div style={{ display: 'flex', gap: 6 }}>
                 <button
@@ -640,7 +785,36 @@ function InnerCanvas({ flow }: InnerProps) {
                 </div>
               </Panel>
             )}
+            {peekNode && <PeekTooltip node={peekNode} />}
+            {threadNode && (
+              <FlowCommentThread
+                node={threadNode}
+                comments={threadFor(threadNode.id)}
+                onSubmit={(body) => addComment(threadNode.id, body)}
+                onClose={() => setThreadNodeId(null)}
+              />
+            )}
           </ReactFlow>
+
+          {/* Doc preview levels 2 & 3 (level 1 = peek tooltip above) */}
+          {expandedNode && (
+            <ExpandedDocPreview
+              node={expandedNode}
+              onOpenFull={() => { setPanelNodeId(expandedNode.id); setExpandedNodeId(null); }}
+              onCollapse={() => setExpandedNodeId(null)}
+            />
+          )}
+          {panelNode && <FullDocPanel node={panelNode} onClose={() => setPanelNodeId(null)} />}
+
+          {/* In-canvas guided walk */}
+          {walkMode && (
+            <WalkOverlay
+              flowSlug={flow.slug}
+              version={isPublished ? 'published' : 'draft'}
+              onFocus={handleWalkFocus}
+              onExit={exitWalk}
+            />
+          )}
         </div>
       </div>
 
@@ -666,17 +840,11 @@ function InnerCanvas({ flow }: InnerProps) {
           onDeleteNode={handleDeleteNode}
         />
       )}
-      {walkMode && (
-        <WalkSimulator
-          flowSlug={flow.slug}
-          version={isPublished ? 'published' : 'draft'}
-          onClose={() => setWalkMode(false)}
-        />
-      )}
       {publishOpen && (
         <PublishModal flowId={flow.id} onClose={() => setPublishOpen(false)} onPublished={handlePublished} />
       )}
     </div>
+   </FlowUIContext.Provider>
   );
 }
 

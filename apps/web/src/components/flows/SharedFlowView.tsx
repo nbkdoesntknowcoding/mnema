@@ -9,7 +9,7 @@ interface FNode {
   data: Record<string, unknown>;
 }
 interface FEdge { from_node_id: string; to_node_id: string; from_socket: string }
-interface Shared { name: string; description: string | null; published: boolean; nodes: FNode[]; edges: FEdge[] }
+interface Shared { name: string; description: string | null; published: boolean; nodes: FNode[]; edges: FEdge[]; author?: string | null }
 
 const ink = 'var(--ink, #e7e7e9)';
 const soft = 'var(--ink-soft, #a1a1aa)';
@@ -55,6 +55,7 @@ export function SharedFlowView({ token }: { token: string }): JSX.Element {
       </div>
       <h1 style={{ margin: 0, font: '500 26px/1.2 var(--sans)', letterSpacing: '-0.02em', color: ink }}>{state.name}</h1>
       {state.description && <p style={{ margin: '8px 0 0', fontSize: 14, color: soft, maxWidth: '40rem' }}>{state.description}</p>}
+      {state.author && <div style={{ marginTop: 10, fontSize: 12, color: muted }}>by {state.author}</div>}
       {!state.published && (
         <p style={{ margin: '14px 0 0', fontSize: 13, color: 'var(--amber, #f0997b)' }}>
           This flow hasn’t been published yet — there’s nothing to show.

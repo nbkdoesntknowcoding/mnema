@@ -4,7 +4,7 @@ import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import { config } from '../config/env.js';
 import { db } from '../db/index.js';
-import { flows, flowVersions, flowNodes, flowEdges, flowRuns, flowRunSteps, users } from '../db/schema.js';
+import { flows, flowVersions, flowNodes, flowEdges, flowRuns, flowRunSteps, users, flowComments } from '../db/schema.js';
 import { withTenant } from '../db/with-tenant.js';
 import { renderNodeContent, topologicalWalk } from '../lib/flows/walk.js';
 import { enforceFreeFlowLimit } from '../plugins/free-limits.js';
@@ -1045,5 +1045,73 @@ export const flowsRoutes: FastifyPluginAsync = async (app) => {
     });
     if (!detail) return reply.code(404).send({ error: 'run_not_found' });
     return reply.send(detail);
+  });
+
+  // -------------------------------------------------------------------
+  // Flow node comments — human threads anchored to a client_node_id.
+  // -------------------------------------------------------------------
+  const commentSchema = z.object({
+    client_node_id: z.string().min(1).max(64),
+    body: z.string().min(1).max(4000),
+  });
+
+  // GET /api/flows/:id/comments — every node comment for the flow (UI groups
+  // them by node and derives per-node counts).
+  app.get<{ Params: { id: string } }>('/api/flows/:id/comments', async (req, reply) => {
+    if (!req.auth) return reply.code(401).send({ error: 'unauthorized' });
+    const result = await withTenant(req.auth.tenant_id, async (tx) => {
+      const flow = await resolveFlow(tx, req.params.id);
+      if (!flow) return null;
+      const rows = await tx
+        .select({
+          id: flowComments.id,
+          clientNodeId: flowComments.clientNodeId,
+          body: flowComments.body,
+          resolved: flowComments.resolved,
+          createdAt: flowComments.createdAt,
+          authorId: flowComments.authorId,
+          authorName: users.displayName,
+          authorEmail: users.email,
+        })
+        .from(flowComments)
+        .leftJoin(users, eq(users.id, flowComments.authorId))
+        .where(eq(flowComments.flowId, flow.id))
+        .orderBy(flowComments.createdAt);
+      return rows.map((r) => ({
+        id: r.id,
+        node_id: r.clientNodeId,
+        body: r.body,
+        resolved: r.resolved,
+        created_at: r.createdAt.toISOString(),
+        author: { id: r.authorId, name: r.authorName ?? r.authorEmail ?? 'someone' },
+      }));
+    });
+    if (!result) return reply.code(404).send({ error: 'flow_not_found' });
+    return reply.send({ comments: result });
+  });
+
+  // POST /api/flows/:id/comments — add a comment on a node.
+  app.post<{ Params: { id: string } }>('/api/flows/:id/comments', async (req, reply) => {
+    if (!req.auth) return reply.code(401).send({ error: 'unauthorized' });
+    const parsed = commentSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'bad_request', issues: parsed.error.issues });
+    const auth = req.auth;
+    const result = await withTenant(auth.tenant_id, async (tx) => {
+      const flow = await resolveFlow(tx, req.params.id);
+      if (!flow) return null;
+      const rows = await tx
+        .insert(flowComments)
+        .values({
+          workspaceId: auth.tenant_id,
+          flowId: flow.id,
+          clientNodeId: parsed.data.client_node_id,
+          authorId: auth.sub,
+          body: parsed.data.body,
+        })
+        .returning({ id: flowComments.id, createdAt: flowComments.createdAt });
+      return rows[0] ?? null;
+    });
+    if (!result) return reply.code(404).send({ error: 'flow_not_found' });
+    return reply.code(201).send({ id: result.id, created_at: result.createdAt.toISOString() });
   });
 };

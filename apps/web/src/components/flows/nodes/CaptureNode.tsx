@@ -1,6 +1,7 @@
-import { Handle, Position, type NodeProps } from '@xyflow/react';
-import { NodeShell, TypeBadge } from './NodeShell';
-import { FLOW_TOKENS as T, handleStyle } from '../tokens';
+import { type NodeProps } from '@xyflow/react';
+import { NodeShell, PreviewButton } from './NodeShell';
+import { FLOW_TOKENS as T } from '../tokens';
+import { useFlowUI } from '../flow-ui-context';
 
 interface CaptureData extends Record<string, unknown> {
   title: string;
@@ -13,40 +14,45 @@ interface CaptureData extends Record<string, unknown> {
   hasOutgoingEdge?: boolean;
 }
 
-export function CaptureNode({ data, selected, isConnectable }: NodeProps) {
+export function CaptureNode({ id, data, selected, isConnectable }: NodeProps) {
   const d = data as CaptureData;
-  const preview = d.instruction
-    ? (d.instruction.length > 80 ? d.instruction.slice(0, 78) + '…' : d.instruction)
-    : null;
+  const { setPeek, onPreview, onComment, commentsByNode } = useFlowUI();
+  const accent = T.capture.accent;
+  const isExit = !d.hasOutgoingEdge;
+
+  const body = d.instruction
+    ? <>{d.title_hint ? <span style={{ color: accent }}>→ {d.title_hint}<br /></span> : null}{d.instruction}</>
+    : (d.title_hint
+        ? <span style={{ color: accent }}>→ {d.title_hint}</span>
+        : <span style={{ fontStyle: 'italic', color: 'var(--ink-muted)' }}>No capture instruction written</span>);
 
   return (
-    <NodeShell kind="capture" selected={!!selected} isEntry={d.isEntry} isExit={!d.hasOutgoingEdge}>
-      <TypeBadge label="Capture" icon="✎" colour={T.capture.accent} />
-
-      {d.title_hint && (
-        <p style={{ fontSize: 12, color: T.capture.label, lineHeight: 1.4, margin: '0 0 4px' }}>
-          → {d.title_hint}
-        </p>
-      )}
-
-      {preview
-        ? <p style={{ fontSize: 13, color: '#fafafa', lineHeight: 1.5, margin: 0 }}>{preview}</p>
-        : <p style={{ fontSize: 13, color: '#52525b', lineHeight: 1.5, margin: 0, fontStyle: 'italic' }}>No capture instruction written</p>
-      }
-
-      {d.autonomous && (
-        <div style={{
-          marginTop: 8, display: 'flex', alignItems: 'center', gap: 5,
-          fontFamily: T.fontMono, fontSize: 9.5, color: '#f87171',
-          background: 'rgba(248,113,113,0.08)', border: '0.5px solid rgba(248,113,113,0.25)',
-          borderRadius: 4, padding: '3px 7px',
-        }}>
-          ⚠ Autonomous — writes without approval
-        </div>
-      )}
-
-      <Handle type="target" position={Position.Top}    isConnectable={isConnectable} style={handleStyle()} />
-      <Handle type="source" position={Position.Bottom} isConnectable={isConnectable} style={handleStyle()} />
-    </NodeShell>
+    <div onMouseEnter={() => setPeek(id)} onMouseLeave={() => setPeek(null)}>
+      <NodeShell
+        id={id}
+        accent={accent}
+        eyebrow="CAPTURE"
+        title={d.title}
+        body={body}
+        selected={!!selected}
+        isCapture
+        connectable={isConnectable}
+        commentCount={commentsByNode[id]}
+        onComment={() => onComment(id)}
+        footer={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            {isExit && <PreviewButton accent={accent} label="Preview capture" onClick={() => onPreview(id)} />}
+            {d.autonomous && (
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                fontFamily: 'var(--mono)', fontSize: 9.5, color: 'var(--status-warn)',
+                background: 'rgba(255,122,138,0.08)', border: '1px solid rgba(255,122,138,0.25)',
+                borderRadius: 4, padding: '3px 7px',
+              }}>⚠ Autonomous</span>
+            )}
+          </div>
+        }
+      />
+    </div>
   );
 }

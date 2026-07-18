@@ -87,7 +87,9 @@
     "unified": "^11.0.5",
     "voyageai": "^0.4.0",
     "yjs": "^13.6.31",
-    "zod": "^3.23.0"
+    "zod": "^3.23.0",
+    "@fastify/websocket": "^11.0.2",
+    "ws": "^8.20.1"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",

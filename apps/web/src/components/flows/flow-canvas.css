@@ -1,16 +1,67 @@
-/* Flow canvas — handle hover/connecting states & edge animation */
+/* Flow canvas — handle states, edge animation, node chrome reset */
 
+/* xyflow wraps each node in .react-flow__node with its own bg/border/shadow.
+   Our NodeShell draws the whole card, so strip the default chrome — but do NOT
+   force box-shadow off here, so the run-overlay's inline glow still shows. */
+.react-flow__node {
+  background: transparent;
+  border: none;
+  padding: 0;
+  border-radius: 0;
+  font-family: var(--sans);
+}
+/* kill only xyflow's default selected/focus outline (NodeShell draws its own). */
+.react-flow__node.selected,
+.react-flow__node:focus,
+.react-flow__node:focus-visible {
+  outline: none !important;
+}
+
+.react-flow__handle {
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
 .react-flow__handle:hover {
-  border-color: rgba(255,255,255,0.50) !important;
-  background: #27272a !important;
+  box-shadow: 0 0 0 4px rgba(255,255,255,0.08);
 }
 .react-flow__handle.connecting,
 .react-flow__handle.valid {
-  border-color: #fbbf24 !important;
-  background: rgba(251,191,36,0.15) !important;
+  box-shadow: 0 0 0 4px rgba(255,179,112,0.20);
 }
 
-@keyframes flowDash {
-  from { stroke-dashoffset: 22; }
-  to   { stroke-dashoffset: 0; }
+/* node-type palette buttons */
+.flow-palette-btn:not(:disabled):hover { background: var(--surface-2) !important; }
+
+/* travelling-signal dash on active edges */
+@keyframes mnDash {
+  to { stroke-dashoffset: -24; }
+}
+
+/* doc preview: full-doc panel slide-in + sync-dot breathe */
+@keyframes flowPanelIn {
+  from { transform: translateX(102%); }
+  to   { transform: translateX(0); }
+}
+@keyframes flowBreathe {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(107,227,155,.55); }
+  50%      { opacity: .6; box-shadow: 0 0 0 4px rgba(107,227,155,0); }
+}
+
+/* rendered markdown in the doc-preview surfaces */
+.flow-doc-prose h1 { font: 600 26px/1.25 var(--serif); color: var(--ink); margin: 0 0 12px; letter-spacing: -.02em; }
+.flow-doc-prose h2 { font: 600 19px/1.3 var(--sans); color: var(--ink); margin: 24px 0 10px; }
+.flow-doc-prose h3 { font: 600 15px/1.3 var(--sans); color: var(--ink); margin: 18px 0 8px; }
+.flow-doc-prose p  { margin: 0 0 12px; }
+.flow-doc-prose ul, .flow-doc-prose ol { margin: 0 0 12px; padding-left: 20px; }
+.flow-doc-prose li { margin: 4px 0; }
+.flow-doc-prose a  { color: var(--status-info, #7c9cff); text-decoration: underline; }
+.flow-doc-prose code { font-family: var(--mono); font-size: .88em; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
+.flow-doc-prose pre { background: var(--canvas); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; overflow-x: auto; margin: 0 0 14px; }
+.flow-doc-prose pre code { background: none; padding: 0; }
+.flow-doc-prose blockquote { border-left: 2px solid var(--accent-line); background: var(--surface-2); margin: 0 0 14px; padding: 8px 14px; color: var(--ink-soft); }
+.flow-doc-prose em { color: var(--ink); font-style: italic; }
+.flow-doc-prose strong { color: var(--ink); font-weight: 600; }
+
+@media (prefers-reduced-motion: reduce) {
+  .react-flow__edge path { animation: none !important; }
+  [style*="flowBreathe"], [style*="flowPanelIn"] { animation: none !important; }
 }
