@@ -1147,6 +1147,25 @@ export const flowRunSteps = pgTable(
   }),
 );
 
+// Human comment threads anchored to a flow node (by client_node_id). Separate
+// from doc comment_threads (Yjs text-anchored). Migration 0074.
+export const flowComments = pgTable(
+  'flow_comments',
+  {
+    id:           uuid('id').primaryKey().defaultRandom(),
+    workspaceId:  uuid('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
+    flowId:       uuid('flow_id').notNull().references(() => flows.id, { onDelete: 'cascade' }),
+    clientNodeId: text('client_node_id').notNull(),
+    authorId:     uuid('author_id').notNull().references(() => users.id),
+    body:         text('body').notNull(),
+    resolved:     boolean('resolved').notNull().default(false),
+    createdAt:    timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    flowNodeIdx: index('flow_comments_flow_node_idx').on(table.flowId, table.clientNodeId, table.createdAt),
+  }),
+);
+
 // ============================================================================
 // Phase A — OAuth 2.1 Authorization Server
 // ============================================================================

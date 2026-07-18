@@ -1,14 +1,17 @@
 /**
- * Layered top-to-bottom auto-layout for flow graphs (no external dep).
+ * Layered left-to-right auto-layout for flow graphs (no external dep).
  *
- * Longest-path layering (Kahn topological order) → each node sits one row below
- * its deepest predecessor; nodes sharing a row are spread and centered. Good
- * enough to turn a pile of (0,0) nodes into a readable DAG. Cycles/disconnected
- * nodes degrade gracefully (kept at their computed/earliest row).
+ * Longest-path layering (Kahn topological order) → each node sits one column to
+ * the right of its deepest predecessor; nodes sharing a column are spread and
+ * centered vertically. Good enough to turn a pile of (0,0) nodes into a readable
+ * horizontal DAG. Cycles/disconnected nodes degrade gracefully (kept at their
+ * computed/earliest column).
  */
 
 export interface LayoutOpts {
+  /** horizontal gap between successive layers (columns). */
   xGap?: number;
+  /** vertical gap between siblings sharing a column. */
   yGap?: number;
   startX?: number;
   startY?: number;
@@ -19,8 +22,8 @@ export function layeredLayout(
   edges: { source: string; target: string }[],
   opts: LayoutOpts = {},
 ): Record<string, { x: number; y: number }> {
-  const xGap = opts.xGap ?? 300;
-  const yGap = opts.yGap ?? 170;
+  const xGap = opts.xGap ?? 360;
+  const yGap = opts.yGap ?? 200;
   const startX = opts.startX ?? 0;
   const startY = opts.startY ?? 0;
 
@@ -65,10 +68,11 @@ export function layeredLayout(
 
   const pos: Record<string, { x: number; y: number }> = {};
   for (let l = 0; l <= maxLayer; l++) {
-    const row = byLayer.get(l) ?? [];
-    const rowWidth = (row.length - 1) * xGap;
-    row.forEach((id, i) => {
-      pos[id] = { x: Math.round(startX + i * xGap - rowWidth / 2), y: startY + l * yGap };
+    const col = byLayer.get(l) ?? [];
+    const colHeight = (col.length - 1) * yGap;
+    col.forEach((id, i) => {
+      // layer → x (column), sibling index → y (spread + centered)
+      pos[id] = { x: startX + l * xGap, y: Math.round(startY + i * yGap - colHeight / 2) };
     });
   }
   return pos;

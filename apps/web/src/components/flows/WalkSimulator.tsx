@@ -27,12 +27,13 @@ interface Props {
   onClose: () => void;
 }
 
-/** Dot colour per node kind — mirrors the HTML reference */
+/** Dot colour per node kind — matches the hifi node-type accents. */
 const KIND_DOT: Record<string, string> = {
-  doc:         'bg-[var(--ink-soft)]',
-  docs:        'bg-[var(--ink-soft)]',
-  instruction: 'bg-[var(--ink-faint)]',
-  decision:    'bg-[var(--status-warning,#FFB370)]',
+  doc:         'bg-[#7c9cff]',
+  docs:        'bg-[#7c9cff]',
+  instruction: 'bg-[#b8bcc4]',
+  decision:    'bg-[#ff7a8a]',
+  capture:     'bg-[#6be39b]',
 };
 
 export function WalkSimulator({ flowSlug, version, onClose }: Props) {

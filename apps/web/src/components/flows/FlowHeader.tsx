@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { Play, ArrowLeft, Clock, CheckCircle, AlertCircle, Loader2, Save, Share2, Copy, Check, Globe } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { StatusPill } from '../ui/StatusPill';
-import { MonoLabel } from '../ui/typography';
 import type { Flow } from './FlowCanvas';
 import { relativeTime } from '../../lib/relative-time';
 
@@ -39,30 +38,46 @@ export function FlowHeader({
   const [communityOpen, setCommunityOpen] = useState(false);
   return (
     <div className="shrink-0 bg-[var(--surface)] border-b border-[var(--line)] z-10">
-      <div className="flex items-center justify-between px-6 h-14">
-        <div className="flex items-center gap-4">
-          <a
-            href="/app/flows"
-            className="flex items-center gap-1.5 text-[13px] text-[var(--ink-muted)] hover:text-[var(--ink)] transition-colors"
-          >
-            <ArrowLeft size={14} strokeWidth={1.75} />
-            All flows
-          </a>
-          <div className="h-4 w-px bg-[var(--line-strong)]" />
-          <div className="flex items-center gap-3">
-            <h1 className="text-[14px] font-medium text-[var(--ink)]">{flow.name}</h1>
-            {flow.is_published ? (
-              <StatusPill tone="success">Published</StatusPill>
-            ) : (
-              <StatusPill tone="neutral">Draft</StatusPill>
-            )}
-            {hasUnpublishedChanges && (
-              <StatusPill tone="warning">Unsaved changes</StatusPill>
-            )}
+      <div className="flex items-center gap-4 px-6 h-14">
+        <a
+          href="/app/flows"
+          className="flex items-center gap-1.5 text-[13px] text-[var(--ink-muted)] hover:text-[var(--ink)] transition-colors shrink-0"
+        >
+          <ArrowLeft size={14} strokeWidth={1.75} />
+          All flows
+        </a>
+        <div className="h-6 w-px bg-[var(--line-strong)] shrink-0" />
+
+        {/* Title block — name + status pills on one line, description as a
+            single-line subtitle. Everything truncates so the bar stays 56px
+            and never wraps regardless of title/description length. */}
+        <div className="min-w-0 flex-1 flex flex-col justify-center gap-0.5">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <h1 className="text-[13.5px] font-medium text-[var(--ink)] truncate" title={flow.name}>
+              {flow.name}
+            </h1>
+            <div className="flex items-center gap-2 shrink-0">
+              {flow.is_published ? (
+                <StatusPill tone="success">Published</StatusPill>
+              ) : (
+                <StatusPill tone="neutral">Draft</StatusPill>
+              )}
+              {hasUnpublishedChanges && (
+                <StatusPill tone="warning">Unsaved</StatusPill>
+              )}
+            </div>
           </div>
+          {flow.description && (
+            <p
+              className="text-[11.5px] leading-[1.35] text-[var(--ink-muted)] truncate"
+              title={flow.description}
+            >
+              {flow.description}
+            </p>
+          )}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           {/* Save state indicator */}
           <div className="flex items-center gap-1.5 text-[12px]">
             {saveState === 'saving' && (
@@ -134,10 +149,16 @@ export function FlowHeader({
             variant="secondary"
             size="sm"
             onClick={() => setCommunityOpen(true)}
-            title="Publish this flow to the community"
+            title={flow.community_slug ? 'Manage this flow in the community' : 'Publish this flow to the community'}
           >
             <Globe size={12} strokeWidth={1.75} />
             Community
+            {flow.community_slug && (
+              <span
+                title="Published to the community"
+                style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--status-success, #34d399)', display: 'inline-block', marginLeft: 1 }}
+              />
+            )}
           </Button>
 
           <Button
@@ -153,12 +174,6 @@ export function FlowHeader({
 
       {shareOpen && <ShareFlowModal flow={flow} onClose={() => setShareOpen(false)} />}
       {communityOpen && <PublishToCommunityModal flow={flow} onClose={() => setCommunityOpen(false)} />}
-
-      {flow.description && (
-        <div className="px-6 pb-3 text-[12px] text-[var(--ink-muted)] leading-[1.5] max-w-3xl">
-          {flow.description}
-        </div>
-      )}
     </div>
   );
 }
@@ -243,42 +258,68 @@ function ShareFlowModal({ flow, onClose }: { flow: Flow; onClose: () => void }) 
 }
 
 function PublishToCommunityModal({ flow, onClose }: { flow: Flow; onClose: () => void }) {
+  // Reflect the flow's real community state on open (flow.community_slug), so a
+  // flow that's already published shows Update/Remove instead of the publish form.
+  const [slug, setSlug] = useState<string | null>(flow.community_slug);
   const [tagInput, setTagInput] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [publishedUrl, setPublishedUrl] = useState<string | null>(null);
+  const [busy, setBusy] = useState<null | 'publish' | 'update' | 'remove'>(null);
   const [copied, setCopied] = useState(false);
+  const [justUpdated, setJustUpdated] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  async function publish() {
-    setSubmitting(true);
-    setErr(null);
+  const communityUrl = slug
+    ? `${typeof window !== 'undefined' ? window.location.origin : ''}/app/community/${slug}`
+    : null;
+
+  function mapErr(status: number): string {
+    if (status === 400) return 'Publishing to the community hub is not configured on this instance.';
+    if (status === 409) return 'Publish a version of this flow first, then publish it to the community.';
+    if (status === 403) return 'Only workspace owners, admins, and editors can publish.';
+    return 'Something went wrong. Try again.';
+  }
+
+  // Both the first publish and an update hit the same POST — the hub upserts by
+  // (publisher, name), replacing the listing with the flow's current published version.
+  async function doPublish(kind: 'publish' | 'update') {
+    setBusy(kind); setErr(null); setJustUpdated(false);
     try {
       const tags = tagInput.split(',').map((t) => t.trim()).filter(Boolean).slice(0, 10);
       const res = await fetch(`/api/flows/${flow.id}/publish-to-community`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tags }),
+        body: JSON.stringify(kind === 'publish' ? { tags } : {}),
       });
-      if (res.status === 400) { setErr('No community key configured. Get one in Settings → Community, then set COMMUNITY_HUB_KEY.'); return; }
-      if (res.status === 409) { setErr('Publish a version of this flow first, then publish it to the community.'); return; }
-      if (res.status === 403) { setErr('Only workspace owners, admins, and editors can publish.'); return; }
-      if (!res.ok) { setErr('Publish failed. Try again.'); return; }
-      const body = (await res.json()) as { community_url: string };
-      setPublishedUrl(body.community_url);
+      if (!res.ok) { setErr(mapErr(res.status)); return; }
+      const body = (await res.json()) as { community_slug: string };
+      setSlug(body.community_slug);
+      if (kind === 'update') setJustUpdated(true);
+    } catch {
+      setErr('Network error. Try again.');
     } finally {
-      setSubmitting(false);
+      setBusy(null);
     }
   }
 
-  async function unpublish() {
-    await fetch(`/api/flows/${flow.id}/publish-to-community`, { method: 'DELETE' }).catch(() => {});
-    onClose();
+  async function remove() {
+    setBusy('remove'); setErr(null);
+    try {
+      const res = await fetch(`/api/flows/${flow.id}/publish-to-community`, { method: 'DELETE' });
+      if (!res.ok) { setErr('Could not remove from community. Try again.'); return; }
+      setSlug(null);
+      setJustUpdated(false);
+    } catch {
+      setErr('Network error. Try again.');
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function copy() {
-    if (!publishedUrl) return;
-    try { await navigator.clipboard.writeText(publishedUrl); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* ignore */ }
+    if (!communityUrl) return;
+    try { await navigator.clipboard.writeText(communityUrl); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* ignore */ }
   }
+
+  const published = Boolean(slug);
 
   return (
     <div
@@ -290,25 +331,20 @@ function PublishToCommunityModal({ flow, onClose }: { flow: Flow; onClose: () =>
         className="w-[min(520px,92vw)] rounded-2xl p-5"
         style={{ background: 'var(--surface-2, #16161a)', border: '0.5px solid var(--line)' }}
       >
-        <h2 className="text-[16px] font-medium" style={{ color: 'var(--ink)' }}>Publish “{flow.name}” to the community</h2>
+        <h2 className="text-[16px] font-medium" style={{ color: 'var(--ink)' }}>
+          {published ? `“${flow.name}” is in the community` : `Publish “${flow.name}” to the community`}
+        </h2>
         <p className="mt-1 text-[12.5px]" style={{ color: 'var(--ink-muted)' }}>
-          Your flow’s structure and instructions become public and importable by anyone. Doc and folder
+          Your flow’s structure and instructions are public and importable by anyone. Doc and folder
           references are <strong>stripped</strong> — no content from your workspace is shared; importers re-bind their own.
         </p>
 
-        {!flow.is_published && (
-          <p className="mt-3 text-[12px]" style={{ color: 'var(--amber, #f0997b)' }}>
-            Publish a version of this flow first — only the published version is uploaded.
-          </p>
-        )}
-
-        {publishedUrl ? (
+        {published ? (
           <>
-            <p className="mt-4 text-[12.5px]" style={{ color: 'var(--ink)' }}>Published. Anyone can now find it here:</p>
-            <div className="mt-2 flex items-center gap-2">
+            <div className="mt-4 flex items-center gap-2">
               <input
                 readOnly
-                value={publishedUrl}
+                value={communityUrl ?? ''}
                 onFocus={(e) => e.currentTarget.select()}
                 className="flex-1 h-9 px-3 rounded-md text-[12.5px] outline-none"
                 style={{ background: 'var(--surface-input, rgba(255,255,255,0.04))', color: 'var(--ink)', border: '0.5px solid var(--line)' }}
@@ -318,15 +354,40 @@ function PublishToCommunityModal({ flow, onClose }: { flow: Flow; onClose: () =>
                 {copied ? 'Copied' : 'Copy'}
               </Button>
             </div>
+
+            <p className="mt-3 text-[12px]" style={{ color: 'var(--ink-muted)' }}>
+              <strong>Update</strong> replaces the community copy with this flow’s current published version.
+              Publish your latest edits first if you want them included.
+            </p>
+            {justUpdated && (
+              <p className="mt-2 text-[12px]" style={{ color: 'var(--status-success, #34d399)' }}>Community copy updated.</p>
+            )}
+            {err && <p className="mt-2 text-[12px]" style={{ color: 'var(--red, #f87171)' }}>{err}</p>}
+
             <div className="mt-5 flex items-center justify-between">
-              <button onClick={unpublish} className="text-[12px]" style={{ color: 'var(--ink-muted)', background: 'none', border: 'none', cursor: 'pointer' }}>
-                Unpublish
+              <button
+                onClick={() => void remove()}
+                disabled={busy !== null}
+                className="text-[12px]"
+                style={{ color: 'var(--red, #f87171)', background: 'none', border: 'none', cursor: 'pointer', opacity: busy === 'remove' ? 0.6 : 1 }}
+              >
+                {busy === 'remove' ? 'Removing…' : 'Remove from community'}
               </button>
-              <Button variant="primary" size="sm" onClick={onClose}>Done</Button>
+              <div className="flex items-center gap-2">
+                <Button variant="secondary" size="sm" onClick={onClose}>Done</Button>
+                <Button variant="primary" size="sm" onClick={() => void doPublish('update')} disabled={busy !== null || !flow.is_published}>
+                  {busy === 'update' ? 'Updating…' : 'Update community copy'}
+                </Button>
+              </div>
             </div>
           </>
         ) : (
           <>
+            {!flow.is_published && (
+              <p className="mt-3 text-[12px]" style={{ color: 'var(--amber, #f0997b)' }}>
+                Publish a version of this flow first — only the published version is uploaded.
+              </p>
+            )}
             <label className="mt-4 block text-[11px]" style={{ color: 'var(--ink-muted)' }}>Tags (comma-separated)</label>
             <input
               value={tagInput}
@@ -338,8 +399,8 @@ function PublishToCommunityModal({ flow, onClose }: { flow: Flow; onClose: () =>
             {err && <p className="mt-3 text-[12px]" style={{ color: 'var(--red, #f87171)' }}>{err}</p>}
             <div className="mt-5 flex items-center justify-end gap-2">
               <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
-              <Button variant="primary" size="sm" onClick={publish} disabled={submitting || !flow.is_published}>
-                {submitting ? 'Publishing…' : 'Publish to community'}
+              <Button variant="primary" size="sm" onClick={() => void doPublish('publish')} disabled={busy !== null || !flow.is_published}>
+                {busy === 'publish' ? 'Publishing…' : 'Publish to community'}
               </Button>
             </div>
           </>

@@ -1,6 +1,7 @@
-import { Handle, Position, type NodeProps } from '@xyflow/react';
-import { NodeShell, TypeBadge } from './NodeShell';
-import { FLOW_TOKENS as T, handleStyle } from '../tokens';
+import { type NodeProps } from '@xyflow/react';
+import { NodeShell } from './NodeShell';
+import { FLOW_TOKENS as T } from '../tokens';
+import { useFlowUI } from '../flow-ui-context';
 
 interface DocsNodeData extends Record<string, unknown> {
   title: string;
@@ -11,35 +12,29 @@ interface DocsNodeData extends Record<string, unknown> {
   hasOutgoingEdge?: boolean;
 }
 
-export function DocsNode({ data, selected, isConnectable }: NodeProps) {
+export function DocsNode({ id, data, selected, isConnectable }: NodeProps) {
   const d = data as DocsNodeData;
+  const { setPeek, onComment, commentsByNode } = useFlowUI();
+  const accent = T.docs.accent;
   const count = d.doc_ids?.length ?? 0;
 
+  const body = count > 0
+    ? (d.instruction || `${count} doc${count === 1 ? '' : 's'} linked`)
+    : <span style={{ color: T.directive.accent }}>⚠ No docs linked — click to add</span>;
+
   return (
-    <NodeShell kind="docs" selected={!!selected} isEntry={d.isEntry} isExit={!d.hasOutgoingEdge}>
-      <TypeBadge label="References" icon="📚" colour={T.docs.accent} />
-
-      {count > 0
-        ? <p style={{ fontSize: 13, color: '#fafafa', lineHeight: 1.5, margin: 0 }}>
-            {count} doc{count === 1 ? '' : 's'} linked
-          </p>
-        : <div style={{
-            fontSize: 12, color: '#fbbf24',
-            background: 'rgba(251,191,36,0.08)',
-            border: '0.5px solid rgba(251,191,36,0.2)',
-            borderRadius: 6, padding: '6px 10px',
-          }}>⚠ No docs linked — click to add</div>
-      }
-
-      {d.instruction && (
-        <p style={{ fontSize: 11, color: '#52525b', marginTop: 6, marginBottom: 0, fontStyle: 'italic',
-          overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
-          "{d.instruction}"
-        </p>
-      )}
-
-      <Handle type="target" position={Position.Top}    isConnectable={isConnectable} style={handleStyle()} />
-      <Handle type="source" position={Position.Bottom} isConnectable={isConnectable} style={handleStyle()} />
-    </NodeShell>
+    <div onMouseEnter={() => setPeek(id)} onMouseLeave={() => setPeek(null)}>
+      <NodeShell
+        id={id}
+        accent={accent}
+        eyebrow="DOCS"
+        title={d.title}
+        body={body}
+        selected={!!selected}
+        connectable={isConnectable}
+        commentCount={commentsByNode[id]}
+        onComment={() => onComment(id)}
+      />
+    </div>
   );
 }

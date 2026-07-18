@@ -2,6 +2,7 @@ import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import sensible from '@fastify/sensible';
+import websocket from '@fastify/websocket';
 import type { FastifyRequest } from 'fastify';
 import Fastify from 'fastify';
 import { config } from './config/env.js';
@@ -25,6 +26,7 @@ import { searchRoutes } from './routes/search.js';
 import { foldersRoutes } from './routes/folders.js';
 import { mcpTokenRoutes } from './routes/mcp-tokens.js';
 import { flowsRoutes } from './routes/flows.js';
+import { flowPresenceRoutes } from './routes/flows-presence.js';
 import { communityRoutes } from './routes/community.js';
 import { healthRoutes } from './routes/health.js';
 import { invitationsRoutes } from './routes/invitations.js';
@@ -128,6 +130,12 @@ await app.register(rateLimit, {
     );
   },
 });
+
+// Presence WebSocket for the Flows editor (awareness-only, cookie-JWT auth in
+// the handler). Registered before authPlugin's /api/* preHandler; the route
+// lives under /ws/ so it isn't gated by it.
+await app.register(websocket, { options: { maxPayload: 4096 } });
+await app.register(flowPresenceRoutes);
 
 await app.register(authPlugin);
 await app.register(healthRoutes);
