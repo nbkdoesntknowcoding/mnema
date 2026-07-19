@@ -27,13 +27,17 @@ export const mcpTokenRoutes: FastifyPluginAsync = async (app) => {
 
     const rows = await withTenant(req.auth.tenant_id, async (tx) => {
       return await tx
+        // snake_case keys to match the POST response and the web TokenRow type.
+        // Returning camelCase here made the connections page render
+        // "Invalid Date · No expiry" for every token (it reads created_at /
+        // expires_at / last_used_at) even though the rows carry real values.
         .select({
           id: mcpTokens.id,
           name: mcpTokens.name,
           scopes: mcpTokens.scopes,
-          expiresAt: mcpTokens.expiresAt,
-          lastUsedAt: mcpTokens.lastUsedAt,
-          createdAt: mcpTokens.createdAt,
+          expires_at: mcpTokens.expiresAt,
+          last_used_at: mcpTokens.lastUsedAt,
+          created_at: mcpTokens.createdAt,
         })
         .from(mcpTokens)
         .where(

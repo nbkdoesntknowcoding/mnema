@@ -42,18 +42,25 @@ const CENSOR = '[REDACTED]';
 // `sk-` optionally followed by a segment tag (e.g. `sk-proj-`, `sk-ant-`) and a
 // long base62-ish body. Kept deliberately broad; only the visible key body is masked.
 const SK_KEY_RE = /sk-(?:[A-Za-z0-9]+-)*[A-Za-z0-9]{20,}/g;
+// Mnema-issued secrets that may leak into a free-form log string: REST API keys
+// (`mnema_api_…`), OAuth refresh tokens (`mnema_rt_…`), and authorization codes
+// (`mnema_ac_…`). Field-name redaction covers known keys; this catches the rest.
+const MNEMA_KEY_RE = /mnema_(?:api|rt|ac)_[A-Za-z0-9_-]{16,}/g;
 
 /**
- * Recursively replace `sk-…` secret-key substrings with `sk-***` anywhere in a
- * logged value. Redaction (above) handles known field NAMES; this catches keys
- * that leak inside free-form strings (error messages, URLs, request bodies)
- * regardless of their key. Depth-bounded and cycle-safe so it can't blow the
- * stack or loop on self-referential objects.
+ * Recursively replace `sk-…` / `mnema_…` secret-key substrings with a masked
+ * form anywhere in a logged value. Redaction (above) handles known field NAMES;
+ * this catches keys that leak inside free-form strings (error messages, URLs,
+ * request bodies) regardless of their key. Depth-bounded and cycle-safe so it
+ * can't blow the stack or loop on self-referential objects.
  */
 function scrubSecretKeys(value: unknown, seen: WeakSet<object>, depth: number): unknown {
   if (depth > 8) return value;
   if (typeof value === 'string') {
-    return value.includes('sk-') ? value.replace(SK_KEY_RE, 'sk-***') : value;
+    let s = value;
+    if (s.includes('sk-')) s = s.replace(SK_KEY_RE, 'sk-***');
+    if (s.includes('mnema_')) s = s.replace(MNEMA_KEY_RE, 'mnema_***');
+    return s;
   }
   if (value === null || typeof value !== 'object') return value;
   if (seen.has(value as object)) return value;
