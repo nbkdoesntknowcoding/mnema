@@ -11,7 +11,7 @@
 import { and, eq } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { workspaceCredentials } from '../db/schema.js';
-import { decryptSecret, encryptSecret } from './secret-box.js';
+import { getSecretStore } from './secret-store/index.js';
 
 export const LLM_PROVIDER = 'llm';
 
@@ -42,7 +42,7 @@ export async function getWorkspaceLlmCredential(
 
   const row = rows[0];
   if (!row) return null;
-  return { apiKey: decryptSecret(row.enc), baseUrl: row.baseUrl, model: row.model };
+  return { apiKey: await getSecretStore().decrypt(row.enc), baseUrl: row.baseUrl, model: row.model };
 }
 
 /** True if a BYOK LLM key exists for the workspace (no decryption). */
@@ -83,7 +83,7 @@ export async function setWorkspaceLlmCredential(
   workspaceId: string,
   cred: { apiKey: string; baseUrl?: string | null; model?: string | null },
 ): Promise<void> {
-  const encryptedKey = encryptSecret(cred.apiKey);
+  const encryptedKey = await getSecretStore().encrypt(cred.apiKey);
   await db
     .insert(workspaceCredentials)
     .values({

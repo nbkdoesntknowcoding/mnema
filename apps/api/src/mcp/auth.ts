@@ -16,6 +16,10 @@ export interface McpAuthContext {
   jwt_id: string | null;
   /** Phase 1 AgentLens: workspace mode. 'dev_project' enables dev MCP tools. */
   workspaceMode?: string;
+  /** Resolved per-request decision on whether the AgentLens dev tools are
+   *  registered for this token. Defaults to (workspaceMode === 'dev_project')
+   *  but a token's dev_tools_enabled flag overrides it either way. */
+  devToolsEnabled?: boolean;
   /** Stage B: set ONLY for a project-scoped API key (the meeting bot). When
    *  present, RLS hard-bounds every tool in this session to that one project. */
   project_id?: string | null;

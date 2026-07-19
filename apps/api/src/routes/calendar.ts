@@ -19,7 +19,8 @@ import {
   calendarConfigured, consentUrl, exchangeCode, listUpcoming, refreshAccess,
 } from '../lib/google-calendar.js';
 import { requireRole, RoleError } from '../lib/role.js';
-import { decryptSecret, encryptSecret, signState, verifySignedState } from '../lib/secret-box.js';
+import { signState, verifySignedState } from '../lib/secret-box.js';
+import { getSecretStore } from '../lib/secret-store/index.js';
 
 export const calendarRoutes: FastifyPluginAsync = async (app) => {
   function guard(err: unknown, reply: FastifyReply): boolean {
@@ -66,7 +67,7 @@ export const calendarRoutes: FastifyPluginAsync = async (app) => {
         return reply.redirect(`${back}?calendar=error`);
       }
       await db.update(workspaceMembers)
-        .set({ calendarRefreshToken: encryptSecret(tokens.refresh_token) })
+        .set({ calendarRefreshToken: await getSecretStore().encrypt(tokens.refresh_token) })
         .where(and(eq(workspaceMembers.workspaceId, st.tenant), eq(workspaceMembers.userId, st.sub)));
       return reply.redirect(`${back}?calendar=connected`);
     } catch (err) {
@@ -118,7 +119,7 @@ export const calendarRoutes: FastifyPluginAsync = async (app) => {
 
     let events;
     try {
-      const accessToken = await refreshAccess(decryptSecret(rows[0].tok));
+      const accessToken = await refreshAccess(await getSecretStore().decrypt(rows[0].tok));
       events = await listUpcoming(accessToken);
     } catch (err) {
       req.log.error({ err }, 'calendar sync failed');

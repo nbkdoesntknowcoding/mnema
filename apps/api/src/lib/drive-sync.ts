@@ -24,7 +24,7 @@ import {
   listFilesInFolder, mimeForExt, updateDriveFile, uploadToFolder,
   type DriveClient, type DriveFile,
 } from './google-drive.js';
-import { decryptSecret } from './secret-box.js';
+import { getSecretStore } from './secret-store/index.js';
 import { R2_BUCKET, isR2Configured, r2 } from './storage/r2-client.js';
 import { contentHash } from './yjs.js';
 
@@ -52,7 +52,7 @@ export async function getLinkDrive(link: DriveLink): Promise<DriveClient | null>
   );
   const enc = rows[0]?.tok;
   if (!enc) return null;
-  return driveClientFromRefresh(decryptSecret(enc));
+  return driveClientFromRefresh(await getSecretStore().decrypt(enc));
 }
 
 function tooLarge(f: DriveFile): boolean {

@@ -933,6 +933,31 @@ export const toolAudit = pgTable(
   }),
 );
 
+// Append-only usage log for developer credentials (REST API keys + MCP tokens).
+// Written rate-limited (≤1 row/credential/minute) from the auth path so the
+// Access page can show real recent activity + posture. See migration.
+export const credentialUsage = pgTable(
+  'credential_usage',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    credentialType: text('credential_type').notNull(), // 'api_key' | 'mcp_token'
+    credentialId: uuid('credential_id').notNull(),
+    ip: text('ip'),
+    path: text('path'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    credIdx: index('credential_usage_cred_idx').on(
+      table.credentialType,
+      table.credentialId,
+      table.createdAt.desc(),
+    ),
+  }),
+);
+
 // ============================================================================
 // Phase 6.1 — Flows
 // ============================================================================
@@ -1038,6 +1063,9 @@ export const mcpTokens = pgTable(
     expiresAt: timestamp('expires_at', { withTimezone: true }),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    // Per-token AgentLens dev-tool toggle. NULL = inherit workspace mode
+    // (dev tools on iff mode = 'dev_project'); TRUE/FALSE force on/off.
+    devToolsEnabled: boolean('dev_tools_enabled'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({

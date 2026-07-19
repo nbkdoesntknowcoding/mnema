@@ -13,26 +13,33 @@ import type { FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify';
 import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
 import { withTenant } from '../../db/with-tenant.js';
 import { docs, folders, flows, tasks } from '../../db/schema.js';
-import { resolveApiKey } from '../../lib/api-keys.js';
+import { resolveApiKey, expandRestScopes } from '../../lib/api-keys.js';
+import { logCredentialUse, clientIp } from '../../lib/credential-usage.js';
 import { searchDocs } from '../../mcp/tools/search-docs.js';
 import { emptyYjsState } from '../../lib/yjs.js';
 import { db } from '../../db/index.js';
+import { createHash } from 'node:crypto';
+import { redis } from '../../plugins/redis.js';
 
 // ── Rate limiter (per API key, 60/min) ────────────────────────────────────────
+// Redis fixed-window counter so the limit is correct across API replicas and
+// survives deploys (was an in-memory Map — per-process, multiplied at scale).
 const RL_WINDOW_MS  = 60 * 1000;
 const RL_MAX        = 60;
-const rlMap = new Map<string, { count: number; resetAt: number }>();
 
-function checkRateLimit(keyId: string): { ok: boolean; resetAt: number } {
-  const now = Date.now();
-  let entry = rlMap.get(keyId);
-  if (!entry || now > entry.resetAt) {
-    entry = { count: 1, resetAt: now + RL_WINDOW_MS };
-    rlMap.set(keyId, entry);
-    return { ok: true, resetAt: entry.resetAt };
+async function checkRateLimit(keyId: string): Promise<{ ok: boolean; resetAt: number }> {
+  const windowStart = Math.floor(Date.now() / RL_WINDOW_MS);
+  const resetAt = (windowStart + 1) * RL_WINDOW_MS;
+  const bucket = `rl:apiv1:${keyId}:${windowStart}`;
+  try {
+    const count = await redis.incr(bucket);
+    if (count === 1) await redis.pexpire(bucket, RL_WINDOW_MS);
+    return { ok: count <= RL_MAX, resetAt };
+  } catch {
+    // Fail-open: a Redis blip must never 500 the public API (matches the global
+    // limiter's skipOnError). Better to briefly under-enforce than to reject.
+    return { ok: true, resetAt };
   }
-  entry.count++;
-  return { ok: entry.count <= RL_MAX, resetAt: entry.resetAt };
 }
 
 // ── Auth middleware ────────────────────────────────────────────────────────────
@@ -60,18 +67,33 @@ async function requireApiAuth(
     return null;
   }
 
-  const rl = checkRateLimit(token.slice(0, 20)); // use prefix as key
+  // Bucket by a hash of the key (never the raw token) so no key material lands
+  // in Redis key names.
+  const rl = await checkRateLimit(createHash('sha256').update(token).digest('hex').slice(0, 32));
   if (!rl.ok) {
     reply.header('Retry-After', String(Math.ceil((rl.resetAt - Date.now()) / 1000)));
     reply.code(429).send({ error: { code: 'rate_limited', message: 'Rate limit exceeded. Retry after window reset.' } });
     return null;
   }
 
+  // Record the use (fire-and-forget, ≤1 row/key/minute) for the Access page's
+  // recent-activity + posture. Log the route template, never the raw URL, so no
+  // ids or query strings land in the table.
+  logCredentialUse({
+    workspaceId: resolved.workspaceId,
+    credentialType: 'api_key',
+    credentialId: resolved.id,
+    ip: clientIp(req),
+    path: req.routeOptions?.url ?? req.url.split('?')[0],
+  });
+
   return { workspaceId: resolved.workspaceId, scopes: resolved.scopes, keyToken: token };
 }
 
 function requireScope(ctx: ApiAuthContext, scope: string, reply: FastifyReply): boolean {
-  if (!ctx.scopes.includes(scope)) {
+  // Legacy coarse scopes (read/write/tasks) expand to the fine scopes they
+  // always granted, so old keys keep working while new keys can be narrower.
+  if (!expandRestScopes(ctx.scopes).has(scope)) {
     reply.code(403).send({
       error: { code: 'forbidden', message: `Scope '${scope}' required. This key has: ${ctx.scopes.join(', ')}` },
     });
@@ -96,7 +118,7 @@ export const publicV1Routes: FastifyPluginAsync = async (app) => {
   app.get('/api/public/v1/docs', async (req, reply) => {
     const ctx = await requireApiAuth(req, reply);
     if (!ctx) return;
-    if (!requireScope(ctx, 'read', reply)) return;
+    if (!requireScope(ctx, 'docs:read', reply)) return;
 
     const qs = req.query as Record<string, string>;
     const limit = Math.min(parseInt(qs.limit ?? '20', 10), 100);
@@ -124,7 +146,7 @@ export const publicV1Routes: FastifyPluginAsync = async (app) => {
   app.get('/api/public/v1/docs/search', async (req, reply) => {
     const ctx = await requireApiAuth(req, reply);
     if (!ctx) return;
-    if (!requireScope(ctx, 'read', reply)) return;
+    if (!requireScope(ctx, 'docs:read', reply)) return;
 
     const qs = req.query as Record<string, string>;
     const q = qs.q?.trim() ?? '';
@@ -154,7 +176,7 @@ export const publicV1Routes: FastifyPluginAsync = async (app) => {
   app.get('/api/public/v1/docs/:id', async (req, reply) => {
     const ctx = await requireApiAuth(req, reply);
     if (!ctx) return;
-    if (!requireScope(ctx, 'read', reply)) return;
+    if (!requireScope(ctx, 'docs:read', reply)) return;
 
     const { id } = req.params as { id: string };
     const qs = req.query as Record<string, string>;
@@ -185,7 +207,7 @@ export const publicV1Routes: FastifyPluginAsync = async (app) => {
   app.get('/api/public/v1/folders', async (req, reply) => {
     const ctx = await requireApiAuth(req, reply);
     if (!ctx) return;
-    if (!requireScope(ctx, 'read', reply)) return;
+    if (!requireScope(ctx, 'docs:read', reply)) return;
 
     const rows = await db.execute(sql`
       SELECT f.id, f.name, COUNT(d.id) AS doc_count
@@ -206,7 +228,7 @@ export const publicV1Routes: FastifyPluginAsync = async (app) => {
   app.get('/api/public/v1/flows', async (req, reply) => {
     const ctx = await requireApiAuth(req, reply);
     if (!ctx) return;
-    if (!requireScope(ctx, 'read', reply)) return;
+    if (!requireScope(ctx, 'flows:read', reply)) return;
 
     const rows = await withTenant(ctx.workspaceId, (tx) =>
       tx
@@ -223,7 +245,7 @@ export const publicV1Routes: FastifyPluginAsync = async (app) => {
   app.get('/api/public/v1/flows/:slug', async (req, reply) => {
     const ctx = await requireApiAuth(req, reply);
     if (!ctx) return;
-    if (!requireScope(ctx, 'read', reply)) return;
+    if (!requireScope(ctx, 'flows:read', reply)) return;
 
     const { slug } = req.params as { slug: string };
 
@@ -245,7 +267,7 @@ export const publicV1Routes: FastifyPluginAsync = async (app) => {
   app.get('/api/public/v1/flows/:slug/steps/:stepIndex', async (req, reply) => {
     const ctx = await requireApiAuth(req, reply);
     if (!ctx) return;
-    if (!requireScope(ctx, 'read', reply)) return;
+    if (!requireScope(ctx, 'flows:read', reply)) return;
 
     const { slug, stepIndex } = req.params as { slug: string; stepIndex: string };
     const idx = parseInt(stepIndex, 10);
@@ -273,7 +295,7 @@ export const publicV1Routes: FastifyPluginAsync = async (app) => {
   app.post('/api/public/v1/docs', async (req, reply) => {
     const ctx = await requireApiAuth(req, reply);
     if (!ctx) return;
-    if (!requireScope(ctx, 'write', reply)) return;
+    if (!requireScope(ctx, 'docs:write', reply)) return;
 
     const body = (req.body ?? {}) as { title?: string; markdown?: string; folderId?: string };
     if (!body.title?.trim()) {
@@ -304,7 +326,7 @@ export const publicV1Routes: FastifyPluginAsync = async (app) => {
   app.patch('/api/public/v1/docs/:id', async (req, reply) => {
     const ctx = await requireApiAuth(req, reply);
     if (!ctx) return;
-    if (!requireScope(ctx, 'write', reply)) return;
+    if (!requireScope(ctx, 'docs:write', reply)) return;
 
     const { id } = req.params as { id: string };
     const body = (req.body ?? {}) as { markdown?: string; title?: string };
@@ -333,7 +355,7 @@ export const publicV1Routes: FastifyPluginAsync = async (app) => {
   app.post('/api/public/v1/docs/:id/append', async (req, reply) => {
     const ctx = await requireApiAuth(req, reply);
     if (!ctx) return;
-    if (!requireScope(ctx, 'write', reply)) return;
+    if (!requireScope(ctx, 'docs:write', reply)) return;
 
     const { id } = req.params as { id: string };
     const body = (req.body ?? {}) as { markdown?: string };
@@ -364,7 +386,7 @@ export const publicV1Routes: FastifyPluginAsync = async (app) => {
   app.get('/api/public/v1/tasks/next', async (req, reply) => {
     const ctx = await requireApiAuth(req, reply);
     if (!ctx) return;
-    if (!requireScope(ctx, 'tasks', reply)) return;
+    if (!requireScope(ctx, 'tasks:read', reply)) return;
 
     const qs = req.query as Record<string, string>;
     const status = (qs.status ?? 'backlog') as string;
@@ -386,7 +408,7 @@ export const publicV1Routes: FastifyPluginAsync = async (app) => {
   app.post('/api/public/v1/tasks/:id/claim', async (req, reply) => {
     const ctx = await requireApiAuth(req, reply);
     if (!ctx) return;
-    if (!requireScope(ctx, 'tasks', reply)) return;
+    if (!requireScope(ctx, 'tasks:write', reply)) return;
 
     const { id } = req.params as { id: string };
     const body = (req.body ?? {}) as { developerId?: string };
@@ -414,7 +436,7 @@ export const publicV1Routes: FastifyPluginAsync = async (app) => {
   app.post('/api/public/v1/tasks/:id/complete', async (req, reply) => {
     const ctx = await requireApiAuth(req, reply);
     if (!ctx) return;
-    if (!requireScope(ctx, 'tasks', reply)) return;
+    if (!requireScope(ctx, 'tasks:write', reply)) return;
 
     const { id } = req.params as { id: string };
     const body = (req.body ?? {}) as { summary?: string; githubPrUrl?: string };
@@ -446,7 +468,7 @@ export const publicV1Routes: FastifyPluginAsync = async (app) => {
   app.post('/api/public/v1/tasks/:id/block', async (req, reply) => {
     const ctx = await requireApiAuth(req, reply);
     if (!ctx) return;
-    if (!requireScope(ctx, 'tasks', reply)) return;
+    if (!requireScope(ctx, 'tasks:write', reply)) return;
 
     const { id } = req.params as { id: string };
     const body = (req.body ?? {}) as { description?: string };
@@ -503,7 +525,7 @@ export const publicV1Routes: FastifyPluginAsync = async (app) => {
 
       switch (fn) {
         case 'search_knowledge_base': {
-          if (!requireScope(ctx, 'read', reply)) return;
+          if (!requireScope(ctx, 'docs:read', reply)) return;
           const r = await searchDocs(fakeCtx, {
             query: String(params.query ?? ''),
             limit: Math.min(Number(params.limit ?? 5), 10),
@@ -514,7 +536,7 @@ export const publicV1Routes: FastifyPluginAsync = async (app) => {
         }
 
         case 'get_doc': {
-          if (!requireScope(ctx, 'read', reply)) return;
+          if (!requireScope(ctx, 'docs:read', reply)) return;
           const rows = await withTenant(ctx.workspaceId, (tx) =>
             tx.select({ id: docs.id, title: docs.title, markdown: docs.markdown })
               .from(docs)
@@ -527,7 +549,7 @@ export const publicV1Routes: FastifyPluginAsync = async (app) => {
         }
 
         case 'list_docs': {
-          if (!requireScope(ctx, 'read', reply)) return;
+          if (!requireScope(ctx, 'docs:read', reply)) return;
           const lim = Math.min(Number(params.limit ?? 20), 50);
           const rows = await withTenant(ctx.workspaceId, (tx) =>
             tx.select({ id: docs.id, title: docs.title, path: docs.path })
@@ -541,7 +563,7 @@ export const publicV1Routes: FastifyPluginAsync = async (app) => {
         }
 
         case 'get_flow_step': {
-          if (!requireScope(ctx, 'read', reply)) return;
+          if (!requireScope(ctx, 'flows:read', reply)) return;
           const { getFlowStepStructured } = await import('../../mcp/tools/get-flow-step.js');
           result = await getFlowStepStructured(fakeCtx, {
             slug: String(params.flow_slug ?? ''),
@@ -551,7 +573,7 @@ export const publicV1Routes: FastifyPluginAsync = async (app) => {
         }
 
         case 'create_doc': {
-          if (!requireScope(ctx, 'write', reply)) return;
+          if (!requireScope(ctx, 'docs:write', reply)) return;
           const title = String(params.title ?? '').trim();
           if (!title) return reply.code(400).send({ error: { code: 'invalid_request', message: 'title required' } });
           const slug2 = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');

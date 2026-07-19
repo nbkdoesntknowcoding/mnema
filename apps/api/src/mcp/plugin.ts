@@ -277,6 +277,24 @@ async function handleMcpRequest(req: FastifyRequest, reply: FastifyReply): Promi
     workspaceMode = undefined;
   }
 
+  // Per-token dev-tool toggle: a legacy mcp_token can force the AgentLens dev
+  // tools on or off. NULL (the default, and every OAuth token) inherits the
+  // workspace mode, so existing tokens are unchanged.
+  let tokenDevTools: boolean | null = null;
+  if (oauthCtx.tokenType === 'legacy' && oauthCtx.jti) {
+    try {
+      const [row] = await db
+        .select({ dev: mcpTokens.devToolsEnabled })
+        .from(mcpTokens)
+        .where(eq(mcpTokens.jti, oauthCtx.jti))
+        .limit(1);
+      tokenDevTools = row?.dev ?? null;
+    } catch {
+      tokenDevTools = null;
+    }
+  }
+  const devToolsEnabled = tokenDevTools ?? workspaceMode === 'dev_project';
+
   // Meeting identity (Phase 1): resolve the effective principal for THIS request.
   // For an act-as key, the asking participant is named in the X-Mnema-Act-As-Email
   // header; we resolve it to a workspace user and answer as THEM. No header or an
@@ -344,6 +362,7 @@ async function handleMcpRequest(req: FastifyRequest, reply: FastifyReply): Promi
     scopes: oauthCtx.scope,
     jwt_id: oauthCtx.jti,
     workspaceMode,
+    devToolsEnabled,
     project_id: effectiveProjectScope,
   };
 

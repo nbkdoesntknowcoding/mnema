@@ -191,10 +191,12 @@ export function createMcpServer(ctx: McpAuthContext): McpServer {
     );
   }
 
-  // ── Phase 1 AgentLens: dev MCP tools (dev_project workspaces only) ──────────
-  // Dev tools are INVISIBLE in tools/list for knowledge-mode workspaces.
-  // They are only registered when workspace.mode === 'dev_project'.
-  if (ctx.workspaceMode === 'dev_project') {
+  // ── Phase 1 AgentLens: dev MCP tools ────────────────────────────────────────
+  // Dev tools are INVISIBLE in tools/list unless enabled for this request.
+  // devToolsEnabled defaults to (workspaceMode === 'dev_project') but a token's
+  // dev_tools_enabled flag can force it on or off (see plugin.ts). The
+  // ?? fallback keeps older callers that only set workspaceMode working.
+  if (ctx.devToolsEnabled ?? ctx.workspaceMode === 'dev_project') {
     for (const { spec, handler } of DEV_TOOLS) {
       mcpServer.registerTool(
         spec.name,
