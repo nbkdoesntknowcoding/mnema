@@ -47,6 +47,14 @@ const envSchema = z.object({
   // scrypt KDF seed for lib/secret-box.ts AES-256-GCM (calendar refresh-token
   // encryption + OAuth state HMAC). Was WORKOS_COOKIE_PASSWORD.
   SECRETBOX_MASTER_KEY: z.string().min(32),
+  // Pluggable secret store (lib/secret-store) for at-rest secrets — OAuth
+  // refresh tokens, BYOK LLM keys. 'env' (default) = AES-GCM under
+  // SECRETBOX_MASTER_KEY; 'kms' = envelope encryption via the KMS_PROVIDER.
+  SECRET_STORE_PROVIDER: z.enum(['env', 'kms']).default('env'),
+  KMS_PROVIDER: z.enum(['local', 'aws', 'gcp']).default('local'),
+  // Local KMS master key (only when SECRET_STORE_PROVIDER=kms, KMS_PROVIDER=local).
+  // Must be distinct from SECRETBOX_MASTER_KEY so the two layers use separate keys.
+  KMS_LOCAL_MASTER_KEY: z.string().min(32).optional(),
   // web <-> api /_internal/* internal_secret shared secret (set-session, waitlist,
   // join-workspace, request-join, accept-invite-pending). Was WORKOS_COOKIE_PASSWORD.
   API_INTERNAL_SECRET: z.string().min(32),

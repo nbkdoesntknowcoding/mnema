@@ -13,6 +13,9 @@ const secret = new TextEncoder().encode(config.JWT_SECRET);
 
 const createSchema = z.object({
   name: z.string().min(1).max(100).default('Claude Desktop'),
+  // Per-token AgentLens dev-tool toggle. Omitted/null = inherit the workspace
+  // mode; true/false force the dev tools on/off for this token.
+  dev_tools: z.boolean().nullish(),
   // Optional subset of scopes the caller wants on this token.
   // If omitted, all scopes allowed by the caller's role are granted.
   // Requested scopes are capped to what the role allows — cannot escalate.
@@ -35,6 +38,7 @@ export const mcpTokenRoutes: FastifyPluginAsync = async (app) => {
           id: mcpTokens.id,
           name: mcpTokens.name,
           scopes: mcpTokens.scopes,
+          dev_tools_enabled: mcpTokens.devToolsEnabled,
           expires_at: mcpTokens.expiresAt,
           last_used_at: mcpTokens.lastUsedAt,
           created_at: mcpTokens.createdAt,
@@ -93,6 +97,21 @@ export const mcpTokenRoutes: FastifyPluginAsync = async (app) => {
 
     // Insert the metadata row first so we can capture the generated jti.
     const row = await withTenant(auth.tenant_id, async (tx) => {
+      // Replace-on-reconnect: revoke any prior active token with the same name
+      // for this user + workspace, so reconnecting a client (e.g. Cursor) swaps
+      // its token instead of stacking a duplicate. One live credential per client.
+      await tx
+        .update(mcpTokens)
+        .set({ revokedAt: new Date() })
+        .where(
+          and(
+            eq(mcpTokens.workspaceId, auth.tenant_id),
+            eq(mcpTokens.userId, auth.sub),
+            eq(mcpTokens.name, parsed.data.name),
+            isNull(mcpTokens.revokedAt),
+          ),
+        );
+
       const inserted = await tx
         .insert(mcpTokens)
         .values({
@@ -100,6 +119,7 @@ export const mcpTokenRoutes: FastifyPluginAsync = async (app) => {
           userId: auth.sub,
           name: parsed.data.name,
           scopes,
+          devToolsEnabled: parsed.data.dev_tools ?? null,
           // 90-day expiry: long enough to be useful, short enough to rotate.
           expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
         })
@@ -129,6 +149,7 @@ export const mcpTokenRoutes: FastifyPluginAsync = async (app) => {
         id: row.id,
         name: row.name,
         scopes: row.scopes,
+        dev_tools_enabled: row.devToolsEnabled,
         expires_at: row.expiresAt,
         created_at: row.createdAt,
       },

@@ -33,6 +33,13 @@ const statusLabel = liveConnection ? 'Active' : hasToken ? 'Token issued — not
   .cc-logo { width: 36px; height: 36px; border-radius: 8px; background: linear-gradient(135deg,#0a1628,#0f2044); color: white; font: 700 14px/1 var(--mono); display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; border: 1px solid rgba(255,255,255,0.12); }
   .cc-sub { margin: 0 0 32px; font-size: 15px; line-height: 1.6; color: var(--ink-soft); max-width: 36rem; }
   .cc-section { margin-bottom: 32px; }
+  .cc-adv { margin-bottom: 22px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .cc-adv > summary { list-style: none; cursor: pointer; padding: 13px 16px; font: 500 13px/1 var(--sans); color: var(--ink-soft); display: flex; align-items: center; gap: 8px; }
+  .cc-adv > summary::-webkit-details-marker { display: none; }
+  .cc-adv > summary::before { content: '\25B8'; color: var(--ink-muted); font-size: 11px; transition: transform .15s; }
+  .cc-adv[open] > summary::before { transform: rotate(90deg); }
+  .cc-adv > summary:hover { color: var(--ink); background: var(--surface-2); }
+  .cc-adv-body { padding: 16px 16px 4px; border-top: 1px solid var(--line); }
   .cc-sec-label { font: 500 10.5px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-muted); margin-bottom: 12px; }
   .cc-sec-h { margin: 0 0 12px; font: 500 15px/1.3 var(--sans); letter-spacing: -0.005em; color: var(--ink); }
   .cc-status-card { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
@@ -117,6 +124,24 @@ const statusLabel = liveConnection ? 'Active' : hasToken ? 'Token issued — not
         Give Windsurf access to your Mnema workspace so the AI can read your docs and walk your flows inline.
       </p>
 
+      <!-- NATIVE CONNECT (primary path) -->
+      <div style="display:flex;gap:14px;align-items:flex-start;padding:18px;margin-bottom:22px;border:1px solid rgba(245,166,35,.28);background:rgba(245,166,35,.05);border-radius:12px;">
+        <div style="flex:none;width:24px;height:24px;border-radius:50%;background:var(--accent);color:var(--on-ink);font:600 12px/24px var(--mono);text-align:center;">1</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font:500 15px/1.3 var(--sans);color:var(--ink);margin-bottom:4px;">Connect in Windsurf — no token to copy</div>
+          <p style="font:400 13px/1.6 var(--sans);color:var(--ink-soft);margin:0 0 12px;">In <b style="color:var(--ink);font-weight:500;">Windsurf → Settings → MCP servers → Add</b>, add this URL and sign in. The secure sign-in runs automatically — no bearer token to paste.</p>
+          <div class="cc-endpoint-block" style="margin-top:2px;">
+            <span class="cc-url" id="cc-native-url">{mcpEndpoint}</span>
+            <button class="cc-copy" id="cc-copy-native-btn" type="button"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span id="cc-copy-native-label">Copy URL</span></button>
+          </div>
+          <p style="font:400 12.5px/1.5 var(--sans);color:var(--ink-muted);margin:10px 0 0;">Manage every connected app and token in <a href="/app/settings/access" style="color:var(--accent);text-decoration:none;">Settings → Access</a>.</p>
+        </div>
+      </div>
+
+      <!-- MANUAL SETUP (collapsed fallback) -->
+      <details class="cc-adv">
+        <summary>Set up manually instead — generate a token &amp; edit a config file</summary>
+        <div class="cc-adv-body">
       <!-- STATUS CARD -->
       <div class="cc-section">
         <div class="cc-status-card">
@@ -228,25 +253,17 @@ const statusLabel = liveConnection ? 'Active' : hasToken ? 'Token issued — not
         </div>
       </div>
 
-      <!-- ACTIVE TOKENS -->
-      {hasToken ? (
-        <div class="cc-section" id="cc-tokens-section">
+      </div>
+      </details>
+
+      <!-- ACTIVE TOKENS — managed centrally in Settings → Access -->
+      {tokens.length > 0 && (
+        <div class="cc-section">
           <div class="cc-sec-label">Active tokens</div>
-          <div class="cc-token-list" id="cc-token-list">
-            {tokens.map(t => (
-              <div class="cc-token-row" data-token-id={t.id}>
-                <div class="cc-token-row-info">
-                  <span class="cc-token-row-name">{t.name}</span>
-                  <span class="cc-token-row-meta">Created {new Date(t.created_at).toLocaleDateString()}{t.expires_at ? ` · Expires ${new Date(t.expires_at).toLocaleDateString()}` : ' · No expiry'}</span>
-                </div>
-                <button class="cc-danger-btn cc-revoke-btn" data-token-id={t.id} type="button" style="font-size:11.5px;padding:6px 10px;">Revoke</button>
-              </div>
-            ))}
-          </div>
+          <p style="font:400 13px/1.6 var(--sans);color:var(--ink-soft);margin:0;">You have <b style="color:var(--ink);font-weight:500;">{tokens.length}</b> active {tokens.length === 1 ? 'token' : 'tokens'}. See, date, and revoke every connected app in one place: <a href="/app/settings/access" style="color:var(--accent);text-decoration:none;">Settings → Access →</a>.</p>
         </div>
-      ) : (
-        <div id="cc-tokens-section" style="display:none;"><div class="cc-token-list" id="cc-token-list"></div></div>
       )}
+      <div id="cc-tokens-section" style="display:none;"><div class="cc-token-list" id="cc-token-list"></div></div>
 
       <!-- DANGER -->
       <div class="cc-danger">
@@ -335,6 +352,7 @@ const statusLabel = liveConnection ? 'Active' : hasToken ? 'Token issued — not
       const sec=document.getElementById('cc-tokens-section');if(sec)sec.style.display='none'; setStatus('inactive');
     });
     document.getElementById('cc-copy-btn')?.addEventListener('click',()=>copyText(mcpEndpoint,document.getElementById('cc-copy-label'),'Copy'));
+    document.getElementById('cc-copy-native-btn')?.addEventListener('click',()=>copyText(mcpEndpoint,document.getElementById('cc-copy-native-label'),'Copy URL'));
     document.getElementById('cc-copy-token-btn')?.addEventListener('click',()=>copyText((document.getElementById('cc-token-value')?.textContent??'').trim(),document.getElementById('cc-copy-token-label'),'Copy token'));
     document.getElementById('cc-copy-config-btn')?.addEventListener('click',()=>copyText((document.getElementById('cc-config-snippet')?.textContent??'').trim(),document.getElementById('cc-copy-config-label'),'Copy'));
   </script>

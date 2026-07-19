@@ -19,7 +19,7 @@ export function generateApiKey(): { plaintext: string; hash: string; prefix: str
 
 export async function resolveApiKey(
   bearerToken: string,
-): Promise<{ userId: string; workspaceId: string; projectId: string | null; actAsUser: boolean; scopes: string[] } | null> {
+): Promise<{ id: string; userId: string; workspaceId: string; projectId: string | null; actAsUser: boolean; scopes: string[] } | null> {
   if (!bearerToken?.startsWith('mnema_api_')) return null;
 
   const hash = crypto.createHash('sha256').update(bearerToken).digest('hex');
@@ -45,6 +45,7 @@ export async function resolveApiKey(
     .catch(() => {});
 
   return {
+    id: key.id,
     userId: key.createdBy,
     workspaceId: key.workspaceId,
     projectId: key.projectId ?? null,
@@ -53,16 +54,11 @@ export async function resolveApiKey(
   };
 }
 
-/**
- * Validate that requested scopes are a subset of allowed scope values.
- */
-const VALID_SCOPES = new Set(['read', 'write', 'tasks']);
-
-export function validateScopes(scopes: unknown): string[] {
-  if (!Array.isArray(scopes) || scopes.length === 0) return ['read'];
-  const valid = scopes.filter((s): s is string => typeof s === 'string' && VALID_SCOPES.has(s));
-  return valid.length > 0 ? valid : ['read'];
-}
+// The REST scope model (coarse+fine, validation, coarse→fine expansion) lives in
+// the dependency-free rest-scopes module so it can be unit-tested in isolation.
+// Imported for local use (key creation) and re-exported for other importers.
+import { validateScopes, expandRestScopes } from './rest-scopes.js';
+export { validateScopes, expandRestScopes };
 
 /**
  * Expand API key coarse scopes to internal MCP tool-level scopes.
@@ -78,11 +74,11 @@ export function validateScopes(scopes: unknown): string[] {
 export function expandApiKeyScopes(rawScopes: string[]): string[] {
   const expanded = new Set<string>(['docs:read']); // always included
   for (const s of rawScopes) {
-    if (s === 'write' || s === 'tasks') {
+    if (s === 'write' || s === 'tasks' || s === 'docs:write') {
       expanded.add('workspace:write');
       expanded.add('docs:write');
     }
-    if (s === 'tasks') {
+    if (s === 'tasks' || s === 'tasks:read' || s === 'tasks:write') {
       expanded.add('tasks');
     }
   }

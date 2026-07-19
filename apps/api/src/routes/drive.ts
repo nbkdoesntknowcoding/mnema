@@ -25,7 +25,8 @@ import {
 } from '../lib/google-drive.js';
 import { enqueueDriveSync } from '../queue/drive-sync.js';
 import { requireRole, RoleError } from '../lib/role.js';
-import { decryptSecret, encryptSecret, signState, verifySignedState } from '../lib/secret-box.js';
+import { signState, verifySignedState } from '../lib/secret-box.js';
+import { getSecretStore } from '../lib/secret-store/index.js';
 
 const DIRECTIONS = ['pull', 'push', 'both'] as const;
 const CONFLICT_POLICIES = ['manual', 'lww'] as const;
@@ -43,7 +44,7 @@ export const driveRoutes: FastifyPluginAsync = async (app) => {
       .where(and(eq(workspaceMembers.userId, userId), isNotNull(workspaceMembers.driveRefreshToken)))
       .limit(1);
     const enc = rows[0]?.tok;
-    return enc ? driveClientFromRefresh(decryptSecret(enc)) : null;
+    return enc ? driveClientFromRefresh(await getSecretStore().decrypt(enc)) : null;
   }
 
   function normalizeTypes(input: unknown): string[] {
@@ -88,7 +89,7 @@ export const driveRoutes: FastifyPluginAsync = async (app) => {
         return reply.redirect(`${back}?drive=error`);
       }
       await db.update(workspaceMembers)
-        .set({ driveRefreshToken: encryptSecret(tokens.refresh_token) })
+        .set({ driveRefreshToken: await getSecretStore().encrypt(tokens.refresh_token) })
         .where(and(eq(workspaceMembers.workspaceId, st.tenant), eq(workspaceMembers.userId, st.sub)));
       return reply.redirect(`${back}?drive=connected`);
     } catch (err) {
