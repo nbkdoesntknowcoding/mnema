@@ -1,0 +1,13 @@
+---
+import SettingsLayout from '../../../layouts/SettingsLayout.astro';
+import { AccessCenter } from '../../../components/settings/AccessCenter';
+
+const auth = Astro.locals.auth;
+if (!auth) {
+  return Astro.redirect('/auth/login');
+}
+---
+
+<SettingsLayout title="Access">
+  <AccessCenter client:load />
+</SettingsLayout>

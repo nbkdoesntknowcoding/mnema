@@ -261,6 +261,40 @@ const isLocalhost = mcpBaseUrl.includes('localhost') || mcpBaseUrl.includes('127
 
   .cc-err { margin-top: 10px; font: 400 12.5px/1.5 var(--sans); color: var(--status-warn); display: none; }
   .cc-err.visible { display: block; }
+
+  /* Native-connect (primary) block */
+  .cc-native {
+    display: flex; gap: 14px; align-items: flex-start;
+    padding: 18px; margin-bottom: 22px;
+    border: 1px solid rgba(245,166,35,.28);
+    background: rgba(245,166,35,.05);
+    border-radius: 12px;
+  }
+  .cc-native-step {
+    flex: none; width: 24px; height: 24px; border-radius: 50%;
+    background: var(--accent); color: var(--on-ink);
+    font: 600 12px/24px var(--mono); text-align: center;
+  }
+  .cc-native-body { flex: 1; min-width: 0; }
+  .cc-native-h { font: 500 15px/1.3 var(--sans); color: var(--ink); margin-bottom: 4px; }
+  .cc-native-p { font: 400 13px/1.6 var(--sans); color: var(--ink-soft); margin: 0 0 12px; }
+  .cc-native-p b { color: var(--ink); font-weight: 500; }
+  .cc-native-manage { font: 400 12.5px/1.5 var(--sans); color: var(--ink-muted); margin: 10px 0 0; }
+  .cc-native-manage a { color: var(--accent); text-decoration: none; }
+  .cc-native-manage a:hover { text-decoration: underline; }
+
+  /* Manual-setup accordion (fallback) */
+  .cc-adv { margin-bottom: 18px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .cc-adv > summary {
+    list-style: none; cursor: pointer; padding: 13px 16px;
+    font: 500 13px/1 var(--sans); color: var(--ink-soft);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .cc-adv > summary::-webkit-details-marker { display: none; }
+  .cc-adv > summary::before { content: '▸'; color: var(--ink-muted); font-size: 11px; transition: transform .15s; }
+  .cc-adv[open] > summary::before { transform: rotate(90deg); }
+  .cc-adv > summary:hover { color: var(--ink); background: var(--surface-2); }
+  .cc-adv-body { padding: 4px 16px 16px; border-top: 1px solid var(--line); }
 </style>
 
 <AppLayout title="Claude connection — Mnema" workspaceName={workspaceName} email={auth.email}>
@@ -283,6 +317,29 @@ const isLocalhost = mcpBaseUrl.includes('localhost') || mcpBaseUrl.includes('127
         Mnema connects to Claude through the Model Context Protocol. Claude reads your docs and
         walks your flows directly, no upload step.
       </p>
+
+      <!-- NATIVE CONNECT (primary path) -->
+      <div class="cc-native">
+        <div class="cc-native-step">1</div>
+        <div class="cc-native-body">
+          <div class="cc-native-h">Connect in Claude — no token to copy</div>
+          <p class="cc-native-p">
+            In <b>Claude → Settings → Connectors → Add custom connector</b>, paste this URL and sign in.
+            Claude runs the secure sign-in and gets its own token automatically.
+          </p>
+          <div class="cc-endpoint-block" style="margin-top:2px;">
+            <span class="cc-url" id="cc-native-url">{mcpEndpoint}</span>
+            <button class="cc-copy" id="cc-copy-native-btn" type="button">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              <span id="cc-copy-native-label">Copy URL</span>
+            </button>
+          </div>
+          <p class="cc-native-manage">
+            Manage every connected app and token — see, date, and revoke — in
+            <a href="/app/settings/access">Settings → Access</a>.
+          </p>
+        </div>
+      </div>
 
       <!-- STATUS CARD -->
       <div class="cc-section">
@@ -364,9 +421,10 @@ const isLocalhost = mcpBaseUrl.includes('localhost') || mcpBaseUrl.includes('127
         <p class="cc-endpoint-help">Paste this into Claude Desktop's MCP connector settings.</p>
       </div>
 
-      <!-- SETUP STEPS -->
-      <div class="cc-section">
-        <div class="cc-sec-label">Connect in 30 seconds</div>
+      <!-- SETUP STEPS (manual fallback — collapsed) -->
+      <details class="cc-adv">
+        <summary>Prefer manual setup? Generate a token and paste a config block</summary>
+        <div class="cc-adv-body">
         <div class="cc-steps">
           <div class={`cc-step${hasToken ? ' done' : ''}`} id="cc-step1">
             <span class="cc-step-num">
@@ -407,7 +465,8 @@ const isLocalhost = mcpBaseUrl.includes('localhost') || mcpBaseUrl.includes('127
             <div class="cc-step-body">Restart Claude Desktop and ask it something about your docs. It'll cite them in the answer — no upload, no re-indexing.</div>
           </div>
         </div>
-      </div>
+        </div>
+      </details>
 
       <!-- SCOPES -->
       <div class="cc-section">
@@ -489,34 +548,21 @@ const isLocalhost = mcpBaseUrl.includes('localhost') || mcpBaseUrl.includes('127
         </div>
       )}
 
-      <!-- ACTIVE TOKENS LIST -->
-      {hasToken && tokens.length > 0 && (
-        <div class="cc-section" id="cc-tokens-section">
+      <!-- ACTIVE TOKENS — managed centrally in Settings → Access -->
+      {tokens.length > 0 && (
+        <div class="cc-section">
           <div class="cc-sec-label">Active tokens</div>
-          <div class="cc-token-list" id="cc-token-list">
-            {tokens.map(t => (
-              <div class="cc-token-row" data-token-id={t.id}>
-                <div class="cc-token-row-info">
-                  <span class="cc-token-row-name">{t.name}</span>
-                  <span class="cc-token-row-meta">
-                    Created {new Date(t.created_at).toLocaleDateString()}
-                    {t.expires_at ? ` · Expires ${new Date(t.expires_at).toLocaleDateString()}` : ' · No expiry'}
-                  </span>
-                </div>
-                <button class="cc-danger-btn cc-revoke-btn" data-token-id={t.id} type="button" style="font-size:11.5px;padding:6px 10px;">
-                  Revoke
-                </button>
-              </div>
-            ))}
-          </div>
+          <p style="font:400 13px/1.6 var(--sans);color:var(--ink-soft);margin:0;">
+            You have <b style="color:var(--ink);font-weight:500;">{tokens.length}</b> active
+            {tokens.length === 1 ? ' token' : ' tokens'} for Claude. See, date, and revoke every
+            connected app and token in one place: <a href="/app/settings/access" style="color:var(--accent);text-decoration:none;">Settings → Access →</a>.
+          </p>
         </div>
       )}
-      {!hasToken && (
-        <div id="cc-tokens-section" style="display:none;">
-          <div class="cc-sec-label">Active tokens</div>
-          <div class="cc-token-list" id="cc-token-list"></div>
-        </div>
-      )}
+      {/* Hidden container the manual-generate script appends into (token mgmt lives on the Access page). */}
+      <div id="cc-tokens-section" style="display:none;">
+        <div class="cc-token-list" id="cc-token-list"></div>
+      </div>
 
       <!-- DANGER ZONE -->
       <div class="cc-danger">
@@ -713,6 +759,12 @@ const isLocalhost = mcpBaseUrl.includes('localhost') || mcpBaseUrl.includes('127
     if (copyBtn) copyBtn.addEventListener('click', function() {
       var url = (document.getElementById('cc-mcp-url') && document.getElementById('cc-mcp-url').textContent || '').trim();
       copyText(url, document.getElementById('cc-copy-label'), 'Copy');
+    });
+
+    var copyNativeBtn = document.getElementById('cc-copy-native-btn');
+    if (copyNativeBtn) copyNativeBtn.addEventListener('click', function() {
+      var url = (document.getElementById('cc-native-url') && document.getElementById('cc-native-url').textContent || '').trim();
+      copyText(url, document.getElementById('cc-copy-native-label'), 'Copy URL');
     });
 
     var copyTokenBtn = document.getElementById('cc-copy-token-btn');
