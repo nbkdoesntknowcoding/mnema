@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "mnema": {
+      "url": "${user_config.mnema_origin}/mcp",
+      "type": "http"
+    }
+  }
+}

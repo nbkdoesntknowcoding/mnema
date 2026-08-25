@@ -1,0 +1,15 @@
+{
+  "name": "mnema",
+  "description": "Plugins for Mnema — the self-hostable shared brain for you and your AI agents.",
+  "owner": {
+    "name": "BOPPL — The Boring People",
+    "url": "https://mnema.theboringpeople.in"
+  },
+  "plugins": [
+    {
+      "name": "mnema-brain",
+      "source": "./plugins/mnema-brain",
+      "description": "Self-hostable shared brain for you and your AI agents — docs, flows, meetings, decisions, rationale"
+    }
+  ]
+}

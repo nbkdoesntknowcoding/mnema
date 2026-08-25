@@ -1,0 +1,10 @@
+{
+  "hooks": {
+    "SessionStart":        [{ "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}\"/hooks/capture.mjs" }] }],
+    "SessionEnd":          [{ "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}\"/hooks/capture.mjs" }] }],
+    "Stop":                [{ "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}\"/hooks/capture.mjs" }] }],
+    "PostToolUse":         [{ "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}\"/hooks/capture.mjs" }] }],
+    "PostToolUseFailure":  [{ "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}\"/hooks/capture.mjs" }] }],
+    "PreToolUse":          [{ "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}\"/hooks/capture.mjs" }] }]
+  }
+}
