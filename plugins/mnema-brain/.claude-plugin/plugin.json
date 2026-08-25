@@ -1,0 +1,48 @@
+{
+  "name": "mnema-brain",
+  "displayName": "Mnema — Shared Brain for You and Your AI Agents",
+  "description": "Self-hostable shared brain for you and your AI agents — docs, flows, meetings, decisions, rationale",
+  "version": "0.1.0",
+  "author": {
+    "name": "BOPPL — The Boring People",
+    "url": "https://mnema.theboringpeople.in"
+  },
+  "homepage": "https://mnema.theboringpeople.in",
+  "repository": "https://github.com/nbkdoesntknowcoding/mnema",
+  "license": "SEE LICENSE IN LICENSE",
+  "keywords": [
+    "knowledge-graph",
+    "shared-brain",
+    "self-hosted",
+    "team-knowledge",
+    "decisions",
+    "rationale",
+    "meetings",
+    "flows",
+    "documentation",
+    "context",
+    "fair-code"
+  ],
+  "userConfig": {
+    "mnema_origin": {
+      "type": "string",
+      "title": "Mnema API origin",
+      "description": "Your Mnema API origin. Leave the default for the hosted service, or point it at your own self-hosted instance.",
+      "required": false,
+      "default": "https://api.theboringpeople.in"
+    },
+    "capture_token": {
+      "type": "string",
+      "title": "Capture token (optional)",
+      "description": "Token for the session-capture hook, from Settings → Developer in Mnema. Leave blank to use Mnema without capture — every tool still works.",
+      "sensitive": true,
+      "required": false
+    },
+    "workspace_id": {
+      "type": "string",
+      "title": "Workspace id (optional)",
+      "description": "Only needed alongside a capture token.",
+      "required": false
+    }
+  }
+}
