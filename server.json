@@ -3,16 +3,58 @@
   "name": "in.theboringpeople/mnema",
   "description": "Self-hostable shared brain for you and your AI agents — docs, flows, meetings, decisions, rationale",
   "title": "Mnema — Shared Brain for You and Your AI Agents",
-  "version": "0.1.0",
+  "websiteUrl": "https://mnema.theboringpeople.in",
+  "version": "0.1.1",
   "repository": {
     "url": "https://github.com/nbkdoesntknowcoding/mnema",
     "source": "github",
-    "id": "1288333875"
+    "id": "1288333875",
+    "subfolder": "apps/api"
   },
   "remotes": [
     {
       "type": "streamable-http",
       "url": "https://api.theboringpeople.in/mcp"
     }
-  ]
+  ],
+  "icons": [
+    {
+      "src": "https://mnema.theboringpeople.in/icon-512.png",
+      "mimeType": "image/png",
+      "sizes": [
+        "512x512"
+      ]
+    },
+    {
+      "src": "https://mnema.theboringpeople.in/logo.svg",
+      "mimeType": "image/svg+xml",
+      "sizes": [
+        "any"
+      ]
+    }
+  ],
+  "_meta": {
+    "io.modelcontextprotocol.registry/publisher-provided": {
+      "publisher": "BOPPL — The Boring People",
+      "categories": [
+        "knowledge",
+        "collaboration",
+        "documentation",
+        "productivity"
+      ],
+      "keywords": [
+        "knowledge-graph",
+        "shared-brain",
+        "self-hosted",
+        "team-knowledge",
+        "decisions",
+        "rationale",
+        "meetings",
+        "flows",
+        "documentation",
+        "context",
+        "fair-code"
+      ]
+    }
+  }
 }
