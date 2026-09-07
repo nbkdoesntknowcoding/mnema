@@ -1,0 +1,41 @@
+{
+  "name": "@boppl/mcp-stdio",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Zero-configuration stdio MCP server for Mnema \u2014 advertises the tool catalogue offline and forwards calls to a Mnema workspace",
+  "license": "SEE LICENSE IN LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nbkdoesntknowcoding/mnema.git",
+    "directory": "packages/mcp-stdio"
+  },
+  "keywords": [
+    "mcp",
+    "modelcontextprotocol",
+    "stdio",
+    "mnema",
+    "ai",
+    "knowledge"
+  ],
+  "bin": {
+    "mnema-mcp": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && cp src/tools.generated.json dist/tools.generated.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src --max-warnings 0",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "typescript": "^5.6.0"
+  }
+}

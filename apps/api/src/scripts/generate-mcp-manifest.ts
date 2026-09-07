@@ -1,0 +1,144 @@
+/**
+ * Generate the static MCP tool manifest consumed by `@boppl/mcp-stdio`.
+ *
+ * ⭐ WHY THIS EXISTS. The stdio bridge must answer `initialize` and
+ * `tools/list` in a bare container — no Postgres, no Redis, no env vars. It
+ * cannot import the API to find out what the tools are: importing
+ * `mcp/server.ts` pulls in `config/env.ts` (which calls `process.exit(1)` when
+ * a variable is missing) and three eager ioredis clients that dial on import.
+ * So the catalogue is captured HERE, at build time, where those dependencies
+ * are allowed to exist, and shipped as data.
+ *
+ * The capture is a real MCP `tools/list` over an in-memory transport rather
+ * than a read of the spec constants: it is the same code path a client drives,
+ * so what ships is what the hosted server actually advertises — including the
+ * App tools that `createMcpServer` registers directly.
+ *
+ *   pnpm --filter @boppl/api mcp:manifest
+ *
+ * Drift is caught by mcp-stdio-manifest.test.ts, which regenerates and
+ * compares. Regenerate whenever a tool is added, removed, or re-described.
+ */
+import { writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+// Placeholder env, set BEFORE the API module graph is imported. Nothing here is
+// dialled: the generator never calls a tool, and it exits before ioredis
+// finishes retrying. These values only have to satisfy the zod schema in
+// config/env.ts — they are never used to reach a real service.
+const FILLER = 'x'.repeat(48);
+const STUB_ENV: Record<string, string> = {
+  DATABASE_URL: 'postgres://manifest:manifest@127.0.0.1:5432/manifest',
+  REDIS_URL: 'redis://127.0.0.1:6379',
+  WORKOS_COOKIE_PASSWORD: FILLER,
+  COLLAB_INTERNAL_SECRET: FILLER,
+  SECRETBOX_MASTER_KEY: FILLER,
+  API_INTERNAL_SECRET: FILLER,
+  JWT_SECRET: FILLER,
+  JWT_ISSUER: 'https://manifest.invalid',
+  JWT_AUDIENCE: 'https://manifest.invalid',
+  VOYAGE_API_KEY: 'manifest',
+  GEMINI_API_KEY: 'manifest',
+  OAUTH_ISSUER: 'https://manifest.invalid',
+  OAUTH_PRIVATE_KEY_PATH: '/dev/null',
+  OAUTH_PUBLIC_KEY_PATH: '/dev/null',
+  WORKOS_API_KEY: 'manifest',
+  WORKOS_CLIENT_ID: 'manifest',
+  MCP_BASE_URL: 'https://api.theboringpeople.in',
+};
+for (const [k, v] of Object.entries(STUB_ENV)) process.env[k] ??= v;
+
+// ioredis dials on construction (queue/embeddings.ts, queue/pdf-generation.ts,
+// mcp/tools/query-embedding.ts). Those sockets are irrelevant to a schema dump,
+// but an unhandled 'error' event would still reach the console and could take
+// the process down. Swallow ONLY connection-refused noise, and say so.
+let suppressed = 0;
+process.on('uncaughtException', (err: NodeJS.ErrnoException) => {
+  const msg = String(err?.message ?? err);
+  if (err?.code === 'ECONNREFUSED' || msg.includes('ECONNREFUSED')) {
+    suppressed++;
+    return;
+  }
+  throw err;
+});
+
+async function main(): Promise<void> {
+  const { createMcpServer } = await import('../mcp/server.js');
+  const { mcpConfig } = await import('../mcp/config.js');
+  const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+  const { InMemoryTransport } = await import('@modelcontextprotocol/sdk/inMemory.js');
+
+  // A caller with no dev tools and no project scoping — the default catalogue
+  // any ordinary client sees. Dev tools stay out on purpose: they are gated per
+  // token at runtime and must not appear in a public directory listing.
+  const server = createMcpServer({
+    user_id: '00000000-0000-0000-0000-000000000000',
+    tenant_id: '00000000-0000-0000-0000-000000000000',
+    email: 'manifest@invalid',
+    scopes: ['workspace:read', 'workspace:write'],
+    jwt_id: null,
+    devToolsEnabled: false,
+    project_id: null,
+  });
+
+  const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: 'manifest-generator', version: '1.0.0' });
+  await Promise.all([server.connect(serverSide), client.connect(clientSide)]);
+
+  const { tools } = await client.listTools();
+  await client.close();
+  await server.close();
+
+  if (tools.length === 0) {
+    // A zero-tool manifest would ship a server that looks alive and does
+    // nothing — the exact failure this file exists to prevent.
+    throw new Error('refusing to write an empty manifest: tools/list returned 0 tools');
+  }
+
+  // `__ui_probe` is a development probe for the MCP Apps protocol, registered
+  // unconditionally in mcp/server.ts and therefore live in the hosted
+  // tools/list. It is not a product capability and must not be advertised in a
+  // public directory listing. Excluded here rather than unregistered upstream:
+  // removing it from the server is a separate decision, not a packaging one.
+  const EXCLUDED = new Set(['__ui_probe']);
+  const published = tools.filter((t) => !EXCLUDED.has(t.name));
+  process.stderr.write(
+    `tools/list returned ${tools.length}; publishing ${published.length} ` +
+      `(excluded: ${tools.length - published.length ? [...EXCLUDED].join(', ') : 'none'})\n`,
+  );
+
+  const manifest = {
+    _comment:
+      'GENERATED by apps/api/src/scripts/generate-mcp-manifest.ts — do not edit by hand. ' +
+      'Run: pnpm --filter @boppl/api mcp:manifest',
+    serverName: mcpConfig.serverName,
+    serverTitle: mcpConfig.serverTitle,
+    serverVersion: mcpConfig.serverVersion,
+    instructions: mcpConfig.serverDescription,
+    tools: published
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((t) => ({
+        name: t.name,
+        ...(t.title ? { title: t.title } : {}),
+        description: t.description ?? '',
+        inputSchema: t.inputSchema,
+        ...(t.annotations ? { annotations: t.annotations } : {}),
+      })),
+  };
+
+  // Optional argv[2] lets the drift test write somewhere disposable and diff
+  // against the committed file, so the check exercises this exact generator
+  // rather than a reimplementation of it.
+  const out =
+    process.argv[2] ??
+    resolve(import.meta.dirname, '../../../../packages/mcp-stdio/src/tools.generated.json');
+  writeFileSync(out, JSON.stringify(manifest, null, 2) + '\n');
+  process.stderr.write(
+    `wrote ${manifest.tools.length} tools → ${out}` +
+      (suppressed ? ` (${suppressed} ECONNREFUSED events suppressed)\n` : '\n'),
+  );
+  process.exit(0);
+}
+
+void main();

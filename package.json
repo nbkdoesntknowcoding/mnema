@@ -3,6 +3,28 @@
   "private": true,
   "type": "module",
   "version": "0.0.1",
+  "description": "Self-hostable shared brain for you and your AI agents — docs, flows, meetings, decisions and rationale, published to any MCP client",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "mcp-server",
+    "knowledge-base",
+    "knowledge-graph",
+    "ai-agents",
+    "self-hosted",
+    "fair-code",
+    "collaboration",
+    "documentation"
+  ],
+  "homepage": "https://mnema.theboringpeople.in",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nbkdoesntknowcoding/mnema.git"
+  },
+  "bugs": {
+    "url": "https://github.com/nbkdoesntknowcoding/mnema/issues"
+  },
+  "license": "SEE LICENSE IN LICENSE",
   "engines": {
     "node": ">=22.0.0",
     "pnpm": ">=9.0.0"
