@@ -21,7 +21,8 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "db:studio": "drizzle-kit studio",
     "consolidate:domain": "tsx src/scripts/consolidate-domain-workspace.ts",
-    "rekey:secretbox": "tsx src/scripts/rekey-secret-box.ts"
+    "rekey:secretbox": "tsx src/scripts/rekey-secret-box.ts",
+    "mcp:manifest": "tsx src/scripts/generate-mcp-manifest.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^3.0.90",

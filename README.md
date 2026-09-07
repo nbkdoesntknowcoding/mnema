@@ -46,6 +46,7 @@ in `.env` — bring your own keys. Both stay disabled until set.
 - **[Connect an AI client](./docs/connect/)** — [Claude](./docs/connect/claude.md), [ChatGPT](./docs/connect/chatgpt.md), [Cursor](./docs/connect/cursor.md), [Windsurf](./docs/connect/windsurf.md), [Antigravity](./docs/connect/antigravity.md)
 - **[Embed Mnema in your own app](./docs/connect/api-integration.md)** — REST API + an API key
 - **[REST API reference](./docs/api/)** — every public endpoint, auth, scopes, examples
+- **[Run the MCP server over stdio](./docs/connect/stdio.md)** — zero-configuration `docker run -i`, for desktop clients and offline tool discovery
 
 ## What's in the core (this repo) vs. licensed
 
